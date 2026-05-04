@@ -11,11 +11,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey:            'REMPLACE_MOI',
-    authDomain:        'REMPLACE_MOI',
-    projectId:         'REMPLACE_MOI',
-    storageBucket:     'REMPLACE_MOI',
-    messagingSenderId: 'REMPLACE_MOI',
-    appId:             'REMPLACE_MOI',
+    apiKey: 'AIzaSyCqoahu1PVKpTJ35hhDTVo7f56gyAoRkS8',
+    authDomain: 'hamsterpoints.firebaseapp.com',
+    databaseURL: 'https://hamsterpoints-default-rtdb.europe-west1.firebasedatabase.app',
+    projectId: 'hamsterpoints',
+    storageBucket: 'hamsterpoints.firebasestorage.app',
+    messagingSenderId: '475939580686',
+    appId: '1:475939580686:web:d65f05bad7afe838ea855f',
   );
 }
