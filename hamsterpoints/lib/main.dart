@@ -165,6 +165,9 @@ class AppData {
   static List<TaskTemplate>  taskTemplates  = [];
   static List<ScheduledTask> scheduledTasks = [];
   static String              parentPin      = '';
+  static bool                moneyEnabled   = false;
+  static double              moneyPerSeed   = 0.10;
+  static String              currencySymbol = '€';
 
   static String uid() => DateTime.now().microsecondsSinceEpoch.toString();
 
@@ -207,6 +210,9 @@ class AppData {
       'taskTemplates':  taskTemplates.map((e) => e.toJson()).toList(),
       'scheduledTasks': scheduledTasks.map((e) => e.toJson()).toList(),
       'parentPin':      parentPin,
+      'moneyEnabled':   moneyEnabled,
+      'moneyPerSeed':   moneyPerSeed,
+      'currencySymbol': currencySymbol,
     });
   }
 
@@ -223,13 +229,17 @@ class AppData {
       rewards        = asList('rewards',        RewardItem.fromJson);
       taskTemplates  = asList('taskTemplates',  TaskTemplate.fromJson);
       scheduledTasks = asList('scheduledTasks', ScheduledTask.fromJson);
-      parentPin      = data['parentPin'] as String? ?? '';
+      parentPin      = data['parentPin']      as String? ?? '';
+      moneyEnabled   = data['moneyEnabled']   as bool?   ?? false;
+      moneyPerSeed   = (data['moneyPerSeed']  as num?    ?? 0.10).toDouble();
+      currencySymbol = data['currencySymbol'] as String? ?? '€';
     } catch (_) {}
   }
 
   static void clear() {
     children = []; rewards = []; taskTemplates = [];
     scheduledTasks = []; parentPin = '';
+    moneyEnabled = false; moneyPerSeed = 0.10; currencySymbol = '€';
   }
 }
 
@@ -1056,12 +1066,22 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   final _taskPtsCtrl    = TextEditingController(text: '5');
   final _rewardCtrl     = TextEditingController();
   final _rewardCostCtrl = TextEditingController(text: '20');
+  late final TextEditingController _moneyRateCtrl;
+  late final TextEditingController _currencyCtrl;
   String _icon = '📌';
+
+  @override
+  void initState() {
+    super.initState();
+    _moneyRateCtrl = TextEditingController(text: AppData.moneyPerSeed.toString());
+    _currencyCtrl  = TextEditingController(text: AppData.currencySymbol);
+  }
 
   @override
   void dispose() {
     _taskCtrl.dispose(); _taskPtsCtrl.dispose();
     _rewardCtrl.dispose(); _rewardCostCtrl.dispose();
+    _moneyRateCtrl.dispose(); _currencyCtrl.dispose();
     super.dispose();
   }
 
@@ -1320,6 +1340,58 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
             style: TextButton.styleFrom(foregroundColor: Colors.red),
           ),
         ),
+        const Divider(height: 32),
+
+        // ── Valeur monétaire ──────────────────────────────
+        _header('💰 Valeur des graines en argent'),
+        SwitchListTile(
+          title: const Text('Afficher la valeur en argent'),
+          subtitle: Text(AppData.moneyEnabled
+              ? 'Affiché sur le profil de chaque enfant'
+              : 'Les enfants voient seulement les graines'),
+          value: AppData.moneyEnabled,
+          onChanged: (v) async {
+            setState(() => AppData.moneyEnabled = v);
+            await AppData.save();
+          },
+        ),
+        if (AppData.moneyEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(children: [
+              const Text('1 graine = ', style: TextStyle(fontSize: 15)),
+              SizedBox(width: 80, child: TextField(
+                controller: _moneyRateCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(isDense: true, hintText: '0.10'),
+              )),
+              const SizedBox(width: 8),
+              SizedBox(width: 56, child: TextField(
+                controller: _currencyCtrl,
+                decoration: const InputDecoration(labelText: 'Devise', isDense: true, hintText: '€'),
+              )),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  final rate = double.tryParse(
+                      _moneyRateCtrl.text.trim().replaceAll(',', '.'));
+                  final symbol = _currencyCtrl.text.trim();
+                  if (rate == null || rate <= 0 || symbol.isEmpty) return;
+                  setState(() {
+                    AppData.moneyPerSeed   = rate;
+                    AppData.currencySymbol = symbol;
+                  });
+                  final messenger = ScaffoldMessenger.of(context);
+                  await AppData.save();
+                  if (mounted) {
+                    messenger.showSnackBar(
+                        const SnackBar(content: Text('Taux enregistré ✅')));
+                  }
+                },
+                child: const Text('OK'),
+              ),
+            ]),
+          ),
         const Divider(height: 32),
 
         // ── PIN ───────────────────────────────────────────
@@ -1710,6 +1782,13 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
 
   Widget _seedsBadge(ChildProfile child) {
     final scheme = child.colorScheme;
+    final moneyValue = AppData.moneyEnabled
+        ? (child.seedsBalance * AppData.moneyPerSeed)
+        : null;
+    final moneyText = moneyValue != null
+        ? '💵 ${moneyValue % 1 == 0 ? moneyValue.toInt() : moneyValue.toStringAsFixed(2)} ${AppData.currencySymbol}'
+        : null;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       decoration: BoxDecoration(
@@ -1729,6 +1808,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
           Text('${child.seedsBalance} graines',
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold,
                                      color: Colors.white)),
+          if (moneyText != null)
+            Text(moneyText,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
+                                       color: Colors.white)),
           Text('${child.lifetimeSeeds} gagnées au total 🏆',
               style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.85))),
         ]),
