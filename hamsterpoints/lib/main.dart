@@ -16,6 +16,27 @@ const List<String> kTaskIcons = [
   '🚗','🚲','⭐','💪','🤝','🎁',
 ];
 
+const List<String> kChildAnimals = [
+  '🐹','🐱','🐶','🐰','🐻','🦊','🐼','🐨','🐸','🦄','🐯','🦁',
+];
+
+class ChildColorScheme {
+  final Color bg;
+  final Color accent;
+  const ChildColorScheme(this.bg, this.accent);
+}
+
+const List<ChildColorScheme> kChildColorSchemes = [
+  ChildColorScheme(Color(0xFFFFF0F8), Color(0xFFFF8FAB)), // rose
+  ChildColorScheme(Color(0xFFF0F8FF), Color(0xFF5DADE2)), // bleu
+  ChildColorScheme(Color(0xFFF5F0FF), Color(0xFFAF7AC5)), // violet
+  ChildColorScheme(Color(0xFFF0FFF4), Color(0xFF52BE80)), // vert
+  ChildColorScheme(Color(0xFFFFFBF0), Color(0xFFE67E22)), // orange
+  ChildColorScheme(Color(0xFFFFF0F0), Color(0xFFE74C3C)), // rouge
+  ChildColorScheme(Color(0xFFF0FBFF), Color(0xFF1ABC9C)), // turquoise
+  ChildColorScheme(Color(0xFFFFF8F0), Color(0xFFD4AC0D)), // doré
+];
+
 enum RecurrenceType { none, daily, weekdaysOnly, weekly, biweekly, monthly }
 enum HamsterStage   { egg, baby, small, medium, large, legend }
 enum HamsterMood    { sleeping, sad, neutral, happy, excited }
@@ -26,9 +47,6 @@ class AppPalette {
   static const Color softGreen    = Color(0xFFDDE8CF);
   static const Color brown        = Color(0xFF6F5B46);
   static const Color gold         = Color(0xFFD7B96A);
-  static const Color kawaiiBg     = Color(0xFFFFF0F8);
-  static const Color kawaiiPink   = Color(0xFFFF8FAB);
-  static const Color kawaiiPurple = Color(0xFFBB8FCE);
   static const Color kawaiiMint   = Color(0xFF7DCEA0);
 }
 
@@ -39,11 +57,14 @@ class AppPalette {
 class ChildProfile {
   final String id;
   String name;
+  String animal;
+  int colorIndex;
   int seedsBalance;
   int lifetimeSeeds;
   String? lastTaskDate;
 
   ChildProfile({required this.id, required this.name,
+      this.animal = '🐹', this.colorIndex = 0,
       this.seedsBalance = 0, this.lifetimeSeeds = 0, this.lastTaskDate});
 
   HamsterStage get stage {
@@ -67,12 +88,18 @@ class ChildProfile {
     return HamsterMood.sleeping;
   }
 
+  ChildColorScheme get colorScheme =>
+      kChildColorSchemes[colorIndex.clamp(0, kChildColorSchemes.length - 1)];
+
   Map<String, dynamic> toJson() => {
-    'id': id, 'name': name, 'seedsBalance': seedsBalance,
-    'lifetimeSeeds': lifetimeSeeds, 'lastTaskDate': lastTaskDate,
+    'id': id, 'name': name, 'animal': animal, 'colorIndex': colorIndex,
+    'seedsBalance': seedsBalance, 'lifetimeSeeds': lifetimeSeeds,
+    'lastTaskDate': lastTaskDate,
   };
   factory ChildProfile.fromJson(Map<String, dynamic> j) => ChildProfile(
     id: j['id'] as String, name: j['name'] as String,
+    animal: j['animal'] as String? ?? '🐹',
+    colorIndex: (j['colorIndex'] as num? ?? 0).toInt(),
     seedsBalance:  (j['seedsBalance']  as num? ?? 0).toInt(),
     lifetimeSeeds: (j['lifetimeSeeds'] as num? ?? 0).toInt(),
     lastTaskDate:  j['lastTaskDate']   as String?,
@@ -322,7 +349,8 @@ class _AppGateScreenState extends State<AppGateScreen> {
               child: _gateButton(
                 label: child.name,
                 sub: '${child.seedsBalance} graines 🌱',
-                color: AppPalette.gold,
+                color: child.colorScheme.accent,
+                avatar: child.animal,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => ChildModeScreen(childId: child.id))),
               ),
@@ -336,6 +364,7 @@ class _AppGateScreenState extends State<AppGateScreen> {
   Widget _gateButton({
     required String label, required String sub,
     required Color color, required VoidCallback onTap, int badge = 0,
+    String? avatar,
   }) {
     return Card(
       elevation: 3,
@@ -349,9 +378,11 @@ class _AppGateScreenState extends State<AppGateScreen> {
             Stack(clipBehavior: Clip.none, children: [
               CircleAvatar(
                 radius: 28, backgroundColor: color,
-                child: Text(label[0].toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 22,
-                                           fontWeight: FontWeight.bold)),
+                child: avatar != null
+                    ? Text(avatar, style: const TextStyle(fontSize: 26))
+                    : Text(label[0].toUpperCase(),
+                        style: const TextStyle(color: Colors.white, fontSize: 22,
+                                               fontWeight: FontWeight.bold)),
               ),
               if (badge > 0) Positioned(
                 right: -4, top: -4,
@@ -530,7 +561,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // ── Filtre enfants ────────────────────────────────
         if (AppData.children.isNotEmpty)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -541,7 +571,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
           ),
         const SizedBox(height: 8),
 
-        // ── Calendrier compact ────────────────────────────
         Card(
           child: Padding(
             padding: const EdgeInsets.all(6),
@@ -596,7 +625,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         ),
         const SizedBox(height: 10),
 
-        // ── Tâches en attente de validation ───────────────
         if (pending.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -631,7 +659,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
             ]),
           ),
 
-        // ── Attribuer une tâche ───────────────────────────
         ExpansionTile(
           title: const Text('➕ Attribuer une tâche',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -697,7 +724,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         ),
         const SizedBox(height: 10),
 
-        // ── Tâches du jour ────────────────────────────────
         Text('Tâches du ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
@@ -862,7 +888,6 @@ class ParentSettingsScreen extends StatefulWidget {
 }
 
 class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
-  final _childCtrl      = TextEditingController();
   final _taskCtrl       = TextEditingController();
   final _taskPtsCtrl    = TextEditingController(text: '5');
   final _rewardCtrl     = TextEditingController();
@@ -871,17 +896,114 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
   @override
   void dispose() {
-    _childCtrl.dispose(); _taskCtrl.dispose(); _taskPtsCtrl.dispose();
+    _taskCtrl.dispose(); _taskPtsCtrl.dispose();
     _rewardCtrl.dispose(); _rewardCostCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _addChild() async {
-    final name = _childCtrl.text.trim();
-    if (name.isEmpty) return;
-    setState(() => AppData.children.add(ChildProfile(id: AppData.uid(), name: name)));
-    _childCtrl.clear();
-    await AppData.save(); widget.onRefresh();
+  Future<void> _showChildDialog({ChildProfile? existing}) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    String selectedAnimal = existing?.animal ?? kChildAnimals[0];
+    int selectedColor = existing?.colorIndex ?? 0;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text(existing == null ? 'Ajouter un enfant' : 'Modifier le profil'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: existing == null,
+                decoration: const InputDecoration(labelText: 'Prénom'),
+              ),
+              const SizedBox(height: 20),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Animal', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: kChildAnimals.map((a) {
+                  final isSelected = selectedAnimal == a;
+                  final accent = kChildColorSchemes[selectedColor].accent;
+                  return GestureDetector(
+                    onTap: () => setS(() => selectedAnimal = a),
+                    child: Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        color: isSelected ? accent.withValues(alpha: 0.2) : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: isSelected ? Border.all(color: accent, width: 2.5) : null,
+                      ),
+                      child: Center(child: Text(a, style: const TextStyle(fontSize: 28))),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Couleur de la page', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10, runSpacing: 10,
+                children: kChildColorSchemes.asMap().entries.map((e) {
+                  final isSelected = selectedColor == e.key;
+                  return GestureDetector(
+                    onTap: () => setS(() => selectedColor = e.key),
+                    child: Container(
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(
+                        color: e.value.accent,
+                        shape: BoxShape.circle,
+                        border: isSelected
+                            ? Border.all(color: Colors.black87, width: 3)
+                            : Border.all(color: Colors.transparent, width: 3),
+                        boxShadow: isSelected
+                            ? [BoxShadow(color: e.value.accent.withValues(alpha: 0.5), blurRadius: 8)]
+                            : null,
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, color: Colors.white, size: 20)
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) return;
+                setState(() {
+                  if (existing == null) {
+                    AppData.children.add(ChildProfile(
+                      id: AppData.uid(), name: name,
+                      animal: selectedAnimal, colorIndex: selectedColor,
+                    ));
+                  } else {
+                    existing.name = name;
+                    existing.animal = selectedAnimal;
+                    existing.colorIndex = selectedColor;
+                  }
+                });
+                await AppData.save();
+                widget.onRefresh();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addTask() async {
@@ -1011,23 +1133,35 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
 
         // ── Enfants ───────────────────────────────────────
         _header('👨‍👩‍👧 Enfants'),
-        Row(children: [
-          Expanded(child: TextField(controller: _childCtrl,
-              decoration: const InputDecoration(labelText: 'Prénom'))),
-          const SizedBox(width: 8),
-          ElevatedButton(onPressed: _addChild, child: const Text('Ajouter')),
-        ]),
+        const SizedBox(height: 4),
+        ElevatedButton.icon(
+          onPressed: () => _showChildDialog(),
+          icon: const Icon(Icons.person_add),
+          label: const Text('Ajouter un enfant'),
+        ),
         const SizedBox(height: 8),
         ...AppData.children.map((c) => ListTile(
+          leading: Text(c.animal, style: const TextStyle(fontSize: 26)),
           title: Text(c.name),
           subtitle: Text('${c.seedsBalance} graines · ${c.lifetimeSeeds} au total'),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () async {
-              setState(() => AppData.children.remove(c));
-              await AppData.save(); widget.onRefresh();
-            },
-          ),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+              tooltip: 'Modifier',
+              onPressed: () async {
+                await _showChildDialog(existing: c);
+                setState(() {});
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Supprimer',
+              onPressed: () async {
+                setState(() => AppData.children.remove(c));
+                await AppData.save(); widget.onRefresh();
+              },
+            ),
+          ]),
         )),
         const Divider(height: 32),
 
@@ -1156,27 +1290,28 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     final child = _child;
     if (child == null) {
       return const Scaffold(
-        backgroundColor: AppPalette.kawaiiBg,
         body: Center(child: Text('Profil introuvable 😢')),
       );
     }
 
+    final scheme = child.colorScheme;
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: AppPalette.kawaiiBg,
+        backgroundColor: scheme.bg,
         appBar: AppBar(
-          title: Text('${child.name} 🌸',
+          title: Text('${child.name} ${child.animal}',
               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-          backgroundColor: AppPalette.kawaiiPink,
+          backgroundColor: scheme.accent,
           iconTheme: const IconThemeData(color: Colors.white),
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
             tabs: [
-              Tab(icon: Icon(Icons.pets),           text: 'Mon hamster'),
-              Tab(icon: Icon(Icons.calendar_month), text: 'Mon calendrier'),
+              Tab(icon: Text(child.animal, style: const TextStyle(fontSize: 20)), text: 'Mon compagnon'),
+              const Tab(icon: Icon(Icons.calendar_month), text: 'Mon calendrier'),
             ],
           ),
         ),
@@ -1188,7 +1323,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     );
   }
 
-  // ── Onglet hamster ────────────────────────────────────────
+  // ── Onglet compagnon ──────────────────────────────────────
 
   Widget _hamsterTab(ChildProfile child) {
     final tasks = AppData.scheduledTasks
@@ -1203,7 +1338,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
         const SizedBox(height: 28),
         _seedsBadge(child),
         const SizedBox(height: 28),
-        _taskList(tasks),
+        _taskList(tasks, child),
         const SizedBox(height: 40),
       ],
     );
@@ -1212,6 +1347,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   // ── Onglet calendrier enfant ──────────────────────────────
 
   Widget _calendarTab(ChildProfile child) {
+    final scheme = child.colorScheme;
     final dayTasks = _tasksForDay(child.id, _calDay);
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1241,10 +1377,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
                 cellMargin: const EdgeInsets.all(1),
                 defaultTextStyle: const TextStyle(fontSize: 11),
                 weekendTextStyle: const TextStyle(fontSize: 11, color: Colors.redAccent),
-                selectedDecoration: const BoxDecoration(
-                    color: AppPalette.kawaiiPink, shape: BoxShape.circle),
+                selectedDecoration: BoxDecoration(
+                    color: scheme.accent, shape: BoxShape.circle),
                 todayDecoration: BoxDecoration(
-                    color: AppPalette.kawaiiPurple.withValues(alpha: 0.5),
+                    color: scheme.accent.withValues(alpha: 0.4),
                     shape: BoxShape.circle),
                 outsideDaysVisible: false,
                 markersMaxCount: 0,
@@ -1271,12 +1407,12 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
           Text('Aucune tâche ce jour 🎉',
               style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic))
         else
-          ...dayTasks.map((t) => _kawaiiTaskTile(t)),
+          ...dayTasks.map((t) => _kawaiiTaskTile(t, child)),
       ],
     );
   }
 
-  // ── Zone hamster ──────────────────────────────────────────
+  // ── Zone compagnon ────────────────────────────────────────
 
   Widget _hamsterZone(ChildProfile child) {
     return Column(children: [
@@ -1343,7 +1479,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
               color: Colors.white.withValues(alpha: 0.9)),
         ),
       ],
-      Text(_stageEmoji(child.stage), style: TextStyle(fontSize: s)),
+      Text(_stageEmoji(child.stage, child.animal), style: TextStyle(fontSize: s)),
       if (crown) Positioned(
         top: (z - s) / 2 - 26,
         child: Text('👑', style: TextStyle(fontSize: s * 0.35)),
@@ -1383,17 +1519,18 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   }
 
   Widget _seedsBadge(ChildProfile child) {
+    final scheme = child.colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppPalette.kawaiiPink.withValues(alpha: 0.85),
-                   AppPalette.kawaiiPurple.withValues(alpha: 0.85)],
+          colors: [scheme.accent.withValues(alpha: 0.85),
+                   scheme.accent.withValues(alpha: 0.6)],
           begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [BoxShadow(
-            color: Colors.pinkAccent.withValues(alpha: 0.25),
+            color: scheme.accent.withValues(alpha: 0.3),
             blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1410,7 +1547,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     );
   }
 
-  Widget _taskList(List<ScheduledTask> tasks) {
+  Widget _taskList(List<ScheduledTask> tasks, ChildProfile child) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Mes tâches 📋',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -1423,20 +1560,21 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
               style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
         )
       else
-        ...tasks.take(20).map((t) => _kawaiiTaskTile(t)),
+        ...tasks.take(20).map((t) => _kawaiiTaskTile(t, child)),
     ]);
   }
 
-  Widget _kawaiiTaskTile(ScheduledTask t) {
-    final now      = DateTime.now();
-    final isPast   = !t.date.isAfter(DateTime(now.year, now.month, now.day));
-    final canMark  = !t.done && !t.pendingValidation && isPast;
+  Widget _kawaiiTaskTile(ScheduledTask t, ChildProfile child) {
+    final scheme    = child.colorScheme;
+    final now       = DateTime.now();
+    final isPast    = !t.date.isAfter(DateTime(now.year, now.month, now.day));
+    final canMark   = !t.done && !t.pendingValidation && isPast;
 
     final borderColor = t.done
         ? AppPalette.kawaiiMint
         : t.pendingValidation
             ? Colors.orange.shade300
-            : AppPalette.kawaiiPink.withValues(alpha: 0.4);
+            : scheme.accent.withValues(alpha: 0.4);
 
     final statusText = t.done
         ? 'Validée ✅'
@@ -1473,7 +1611,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                  color: AppPalette.kawaiiPink,
+                  color: scheme.accent,
                   borderRadius: BorderRadius.circular(20)),
               child: const Text('J\'ai fini ! 🙋',
                   style: TextStyle(color: Colors.white, fontSize: 12)),
@@ -1483,15 +1621,15 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     );
   }
 
-  // ── Helpers hamster ───────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────
 
-  String _stageEmoji(HamsterStage s) => switch (s) {
+  String _stageEmoji(HamsterStage s, String animal) => switch (s) {
     HamsterStage.egg    => '🥚',
     HamsterStage.baby   => '🐣',
-    HamsterStage.small  => '🐹',
-    HamsterStage.medium => '🐹',
-    HamsterStage.large  => '🐹',
-    HamsterStage.legend => '🐹',
+    HamsterStage.small  => animal,
+    HamsterStage.medium => animal,
+    HamsterStage.large  => animal,
+    HamsterStage.legend => animal,
   };
 
   double _stageSize(HamsterStage s) => switch (s) {
@@ -1514,11 +1652,11 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
 
   String _stageLabel(HamsterStage s) => switch (s) {
     HamsterStage.egg    => '✨ Encore un œuf... fais des tâches pour le faire éclore !',
-    HamsterStage.baby   => '🌸 Bébé hamster — tu commences bien !',
-    HamsterStage.small  => '🌟 Petit hamster — tu grandis !',
-    HamsterStage.medium => '⚡ Hamster junior — tu es en pleine forme !',
-    HamsterStage.large  => '👑 Grand hamster — champion des tâches !',
-    HamsterStage.legend => '🌈 Hamster légendaire — tu es incroyable !',
+    HamsterStage.baby   => '🌸 Bébé — tu commences bien !',
+    HamsterStage.small  => '🌟 Petit compagnon — tu grandis !',
+    HamsterStage.medium => '⚡ Junior — tu es en pleine forme !',
+    HamsterStage.large  => '👑 Grand compagnon — champion des tâches !',
+    HamsterStage.legend => '🌈 Compagnon légendaire — tu es incroyable !',
   };
 
   String _moodEmoji(HamsterMood m) => switch (m) {
@@ -1538,10 +1676,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   };
 
   String _moodMessage(HamsterMood m, String name) => switch (m) {
-    HamsterMood.sleeping => 'Ton hamster s\'ennuie... fais une tâche pour le réveiller !',
-    HamsterMood.sad      => 'Ton hamster est un peu triste. Il t\'attend ! 🥺',
-    HamsterMood.neutral  => 'Ton hamster est content et se repose 🌿',
-    HamsterMood.happy    => 'Bravo $name ! Ton hamster est heureux ! 🎉',
-    HamsterMood.excited  => 'Waouh ! Ton hamster est super content ! 🌟',
+    HamsterMood.sleeping => 'Ton compagnon s\'ennuie... fais une tâche pour le réveiller !',
+    HamsterMood.sad      => 'Ton compagnon est un peu triste. Il t\'attend ! 🥺',
+    HamsterMood.neutral  => 'Ton compagnon est content et se repose 🌿',
+    HamsterMood.happy    => 'Bravo $name ! Ton compagnon est heureux ! 🎉',
+    HamsterMood.excited  => 'Waouh ! Ton compagnon est super content ! 🌟',
   };
 }
