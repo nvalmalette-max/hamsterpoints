@@ -1,0 +1,17 @@
+# Flutter SDK (local installation)
+flutter/
+
+# Build outputs
+hamsterpoints/build/
+
+# Windows-specific
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+~$*
+
+# Dart/Flutter
+hamsterpoints/.dart_tool/
+hamsterpoints/.flutter-plugins
+hamsterpoints/.flutter-plugins-dependencies

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HamsterPoints Family</title>
+  <style>
+    :root {
+      --bg: #fff8ef;
+      --card: #ffffff;
+      --primary: #ff8f3d;
+      --primary-dark: #e46f1f;
+      --secondary: #7cc576;
+      --secondary-dark: #58a451;
+      --text: #2d2d2d;
+      --muted: #6f6f6f;
+      --border: #f1d7bf;
+      --danger: #d9534f;
+      --warning: #f2b94b;
+      --shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #fff6eb 0%, #fffdf8 100%);
+      color: var(--text);
+    }
+
+    header {
+      padding: 24px 20px 12px;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 2rem;
+      color: var(--primary-dark);
+    }
+
+    header p {
+      margin: 8px 0 0;
+      color: var(--muted);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 20px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: var(--primary-dark);
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-weight: bold;
+      font-size: 0.95rem;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #d9d9d9;
+      font-size: 1rem;
+      background: white;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 110px 110px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      opacity: 0.96;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: var(--secondary);
+      color: white;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-ghost {
+      background: #f8eee4;
+      color: var(--text);
+    }
+
+    .children-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .child-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      background: #fffdf9;
+    }
+
+    .child-card h3 {
+      margin: 0 0 6px;
+    }
+
+    .points {
+      display: inline-block;
+      background: #fff0d8;
+      color: #9a5700;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: bold;
+      margin: 8px 0 12px;
+    }
+
+    .task-list, .reward-list, .history-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .task-item, .reward-item, .history-item {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fffdfa;
+    }
+
+    .task-top, .reward-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+
+    .badge-points {
+      background: #eef9ec;
+      color: #317a2e;
+    }
+
+    .badge-cost {
+      background: #fff0d8;
+      color: #9a5700;
+    }
+
+    .small {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .section-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .footer-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 0 20px 24px;
+    }
+
+    @media (max-width: 920px) {
+      .grid-3, .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .row, .row-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🐹 HamsterPoints Family</h1>
+    <p>Transforme les tâches du quotidien en graines de hamster, récompenses et motivation.</p>
+  </header>
+
+  <main class="container">
+    <section class="grid-3">
+      <div class="card">
+        <h2>Ajouter un enfant</h2>
+        <label for="childName">Prénom</label>
+        <input id="childName" type="text" placeholder="Ex. Emma" />
+        <div class="section-actions">
+          <button class="btn-primary" onclick="addChild()">Ajouter l’enfant</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Ajouter une tâche</h2>
+        <label for="taskName">Nom de la tâche</label>
+        <input id="taskName" type="text" placeholder="Ex. Mettre la table" />
+
+        <div class="row">
+          <div>
+            <label for="taskPoints">Graines gagnées</label>
+            <input id="taskPoints" type="number" min="1" value="5" />
+          </div>
+          <div>
+            <button class="btn-secondary" style="width:100%;" onclick="addTask()">Ajouter</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Ajouter une récompense</h2>
+        <label for="rewardName">Nom du lot / récompense</label>
+        <input id="rewardName" type="text" placeholder="Ex. 30 min de dessin animé" />
+
+        <div class="row">
+          <div>
+            <label for="rewardCost">Coût en graines</label>
+            <input id="rewardCost" type="number" min="1" value="20" />
+          </div>
+          <div>
+            <button class="btn-secondary" style="width:100%;" onclick="addReward()">Ajouter</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2>Attribution des tâches</h2>
+
+        <label for="assignChild">Choisir un enfant</label>
+        <select id="assignChild"></select>
+
+        <label for="assignTask">Choisir une tâche</label>
+        <select id="assignTask"></select>
+
+        <div class="section-actions">
+          <button class="btn-primary" onclick="assignTaskToChild()">Attribuer la tâche</button>
+        </div>
+
+        <hr style="margin: 18px 0; border: none; border-top: 1px solid var(--border);" />
+
+        <h2 style="margin-bottom: 8px;">Enfants</h2>
+        <div id="childrenList" class="children-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>Récompenses</h2>
+        <div id="rewardList" class="reward-list"></div>
+
+        <hr style="margin: 18px 0; border: none; border-top: 1px solid var(--border);" />
+
+        <h2>Historique</h2>
+        <div id="historyList" class="history-list"></div>
+
+        <div class="section-actions">
+          <button class="btn-ghost" onclick="loadDemoData()">Charger des données d’exemple</button>
+          <button class="btn-danger" onclick="resetApp()">Réinitialiser</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="footer-note">
+    Base simple de prototype. Toutes les données restent enregistrées dans le navigateur de cet appareil.
+  </div>
+
+  <script>
+    const STORAGE_KEY = "hamsterPointsFamilyData";
+
+    let state = {
+      children: [],
+      tasks: [],
+      rewards: [],
+      history: []
+    };
+
+    function uid() {
+      return Math.random().toString(36).slice(2, 10);
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          state = JSON.parse(saved);
+        } catch (error) {
+          console.error("Erreur de chargement :", error);
+        }
+      }
+    }
+
+    function addHistory(message) {
+      state.history.unshift({
+        id: uid(),
+        message,
+        date: new Date().toLocaleString("fr-FR")
+      });
+      state.history = state.history.slice(0, 30);
+    }
+
+    function addChild() {
+      const input = document.getElementById("childName");
+      const name = input.value.trim();
+
+      if (!name) {
+        alert("Entre un prénom.");
+        return;
+      }
+
+      state.children.push({
+        id: uid(),
+        name,
+        points: 0,
+        assignedTasks: []
+      });
+
+      addHistory(`👧 Enfant ajouté : ${name}`);
+      input.value = "";
+      persistAndRender();
+    }
+
+    function addTask() {
+      const taskName = document.getElementById("taskName").value.trim();
+      const taskPoints = parseInt(document.getElementById("taskPoints").value, 10);
+
+      if (!taskName || isNaN(taskPoints) || taskPoints <= 0) {
+        alert("Entre un nom de tâche et un nombre de graines valide.");
+        return;
+      }
+
+      state.tasks.push({
+        id: uid(),
+        name: taskName,
+        points: taskPoints
+      });
+
+      addHistory(`✅ Tâche ajoutée : ${taskName} (${taskPoints} graines)`);
+      document.getElementById("taskName").value = "";
+      document.getElementById("taskPoints").value = "5";
+      persistAndRender();
+    }
+
+    function addReward() {
+      const rewardName = document.getElementById("rewardName").value.trim();
+      const rewardCost = parseInt(document.getElementById("rewardCost").value, 10);
+
+      if (!rewardName || isNaN(rewardCost) || rewardCost <= 0) {
+        alert("Entre un nom de récompense et un coût valide.");
+        return;
+      }
+
+      state.rewards.push({
+        id: uid(),
+        name: rewardName,
+        cost: rewardCost
+      });
+
+      addHistory(`🎁 Récompense ajoutée : ${rewardName} (${rewardCost} graines)`);
+      document.getElementById("rewardName").value = "";
+      document.getElementById("rewardCost").value = "20";
+      persistAndRender();
+    }
+
+    function assignTaskToChild() {
+      const childId = document.getElementById("assignChild").value;
+      const taskId = document.getElementById("assignTask").value;
+
+      const child = state.children.find(c => c.id === childId);
+      const task = state.tasks.find(t => t.id === taskId);
+
+      if (!child || !task) {
+        alert("Sélectionne un enfant et une tâche.");
+        return;
+      }
+
+      child.assignedTasks.push({
+        id: uid(),
+        taskId: task.id,
+        name: task.name,
+        points: task.points,
+        done: false
+      });
+
+      addHistory(`📌 Tâche attribuée à ${child.name} : ${task.name}`);
+      persistAndRender();
+    }
+
+    function completeTask(childId, assignedTaskId) {
+      const child = state.children.find(c => c.id === childId);
+      if (!child) return;
+
+      const assignedTask = child.assignedTasks.find(t => t.id === assignedTaskId);
+      if (!assignedTask || assignedTask.done) return;
+
+      assignedTask.done = true;
+      child.points += assignedTask.points;
+
+      addHistory(`🌟 ${child.name} a terminé "${assignedTask.name}" et gagne ${assignedTask.points} graines.`);
+      persistAndRender();
+    }
+
+    function removeAssignedTask(childId, assignedTaskId) {
+      const child = state.children.find(c => c.id === childId);
+      if (!child) return;
+
+      child.assignedTasks = child.assignedTasks.filter(t => t.id !== assignedTaskId);
+      addHistory(`🗑️ Une tâche a été retirée pour ${child.name}.`);
+      persistAndRender();
+    }
+
+    function redeemReward(childId, rewardId) {
+      const child = state.children.find(c => c.id === childId);
+      const reward = state.rewards.find(r => r.id === rewardId);
+
+      if (!child || !reward) return;
+
+      if (child.points < reward.cost) {
+        alert(`${child.name} n’a pas assez de graines pour cette récompense.`);
+        return;
+      }
+
+      child.points -= reward.cost;
+      addHistory(`🎉 ${child.name} a échangé ${reward.cost} graines contre : ${reward.name}`);
+      persistAndRender();
+    }
+
+    function deleteChild(childId) {
+      const child = state.children.find(c => c.id === childId);
+      state.children = state.children.filter(c => c.id !== childId);
+      if (child) addHistory(`❌ Enfant supprimé : ${child.name}`);
+      persistAndRender();
+    }
+
+    function deleteTask(taskId) {
+      const task = state.tasks.find(t => t.id === taskId);
+      state.tasks = state.tasks.filter(t => t.id !== taskId);
+
+      state.children.forEach(child => {
+        child.assignedTasks = child.assignedTasks.filter(t => t.taskId !== taskId);
+      });
+
+      if (task) addHistory(`❌ Tâche supprimée : ${task.name}`);
+      persistAndRender();
+    }
+
+    function deleteReward(rewardId) {
+      const reward = state.rewards.find(r => r.id === rewardId);
+      state.rewards = state.rewards.filter(r => r.id !== rewardId);
+      if (reward) addHistory(`❌ Récompense supprimée : ${reward.name}`);
+      persistAndRender();
+    }
+
+    function loadDemoData() {
+      state = {
+        children: [
+          {
+            id: uid(),
+            name: "Lina",
+            points: 12,
+            assignedTasks: []
+          },
+          {
+            id: uid(),
+            name: "Noé",
+            points: 7,
+            assignedTasks: []
+          }
+        ],
+        tasks: [
+          { id: uid(), name: "Mettre la table", points: 5 },
+          { id: uid(), name: "Ranger sa chambre", points: 8 },
+          { id: uid(), name: "Laver la voiture", points: 15 },
+          { id: uid(), name: "Sortir la poubelle", points: 4 }
+        ],
+        rewards: [
+          { id: uid(), name: "30 min d’écran", cost: 20 },
+          { id: uid(), name: "Petit jouet", cost: 35 },
+          { id: uid(), name: "Pièce de 2€", cost: 25 },
+          { id: uid(), name: "Choisir le dessert", cost: 12 }
+        ],
+        history: []
+      };
+
+      state.children[0].assignedTasks.push({
+        id: uid(),
+        taskId: state.tasks[0].id,
+        name: state.tasks[0].name,
+        points: state.tasks[0].points,
+        done: false
+      });
+
+      state.children[1].assignedTasks.push({
+        id: uid(),
+        taskId: state.tasks[2].id,
+        name: state.tasks[2].name,
+        points: state.tasks[2].points,
+        done: false
+      });
+
+      addHistory("🚀 Données d’exemple chargées.");
+      persistAndRender();
+    }
+
+    function resetApp() {
+      const confirmed = confirm("Tu veux vraiment tout effacer ?");
+      if (!confirmed) return;
+
+      state = {
+        children: [],
+        tasks: [],
+        rewards: [],
+        history: []
+      };
+
+      persistAndRender();
+    }
+
+    function persistAndRender() {
+      saveState();
+      render();
+    }
+
+    function renderSelects() {
+      const childSelect = document.getElementById("assignChild");
+      const taskSelect = document.getElementById("assignTask");
+
+      childSelect.innerHTML = "";
+      taskSelect.innerHTML = "";
+
+      if (state.children.length === 0) {
+        childSelect.innerHTML = `<option value="">Aucun enfant</option>`;
+      } else {
+        state.children.forEach(child => {
+          const option = document.createElement("option");
+          option.value = child.id;
+          option.textContent = `${child.name} (${child.points} graines)`;
+          childSelect.appendChild(option);
+        });
+      }
+
+      if (state.tasks.length === 0) {
+        taskSelect.innerHTML = `<option value="">Aucune tâche</option>`;
+      } else {
+        state.tasks.forEach(task => {
+          const option = document.createElement("option");
+          option.value = task.id;
+          option.textContent = `${task.name} - ${task.points} graines`;
+          taskSelect.appendChild(option);
+        });
+      }
+    }
+
+    function renderChildren() {
+      const container = document.getElementById("childrenList");
+      container.innerHTML = "";
+
+      if (state.children.length === 0) {
+        container.innerHTML = `<div class="empty">Aucun enfant pour le moment.</div>`;
+        return;
+      }
+
+      state.children.forEach(child => {
+        const tasksHtml = child.assignedTasks.length
+          ? child.assignedTasks.map(task => `
+              <div class="task-item">
+                <div class="task-top">
+                  <strong>${escapeHtml(task.name)}</strong>
+                  <span class="badge badge-points">${task.points} graines</span>
+                </div>
+                <div class="small">${task.done ? "Terminée ✅" : "En attente ⏳"}</div>
+                <div class="section-actions">
+                  ${task.done ? "" : `<button class="btn-secondary" onclick="completeTask('${child.id}', '${task.id}')">Marquer comme faite</button>`}
+                  <button class="btn-ghost" onclick="removeAssignedTask('${child.id}', '${task.id}')">Retirer</button>
+                </div>
+              </div>
+            `).join("")
+          : `<div class="empty">Aucune tâche attribuée.</div>`;
+
+        const rewardsHtml = state.rewards.length
+          ? state.rewards.map(reward => `
+              <div class="reward-item">
+                <div class="reward-top">
+                  <strong>${escapeHtml(reward.name)}</strong>
+                  <span class="badge badge-cost">${reward.cost} graines</span>
+                </div>
+                <button class="btn-primary" onclick="redeemReward('${child.id}', '${reward.id}')">Échanger pour ${child.name}</button>
+              </div>
+            `).join("")
+          : `<div class="empty">Aucune récompense créée.</div>`;
+
+        const childCard = document.createElement("div");
+        childCard.className = "child-card";
+        childCard.innerHTML = `
+          <h3>${escapeHtml(child.name)}</h3>
+          <div class="points">🌻 ${child.points} graines de hamster</div>
+
+          <div class="small" style="font-weight:bold; margin-bottom:8px;">Tâches de ${escapeHtml(child.name)}</div>
+          <div class="task-list">${tasksHtml}</div>
+
+          <div class="small" style="font-weight:bold; margin:14px 0 8px;">Récompenses disponibles</div>
+          <div class="reward-list">${rewardsHtml}</div>
+
+          <div class="section-actions">
+            <button class="btn-danger" onclick="deleteChild('${child.id}')">Supprimer ${escapeHtml(child.name)}</button>
+          </div>
+        `;
+        container.appendChild(childCard);
+      });
+    }
+
+    function renderRewardsPanel() {
+      const container = document.getElementById("rewardList");
+      container.innerHTML = "";
+
+      if (state.rewards.length === 0 && state.tasks.length === 0) {
+        container.innerHTML = `<div class="empty">Ajoute des tâches et des récompenses pour commencer.</div>`;
+        return;
+      }
+
+      let html = "";
+
+      if (state.tasks.length > 0) {
+        html += `<div style="margin-bottom:16px;"><strong>Tâches disponibles</strong></div>`;
+        state.tasks.forEach(task => {
+          html += `
+            <div class="task-item">
+              <div class="task-top">
+                <strong>${escapeHtml(task.name)}</strong>
+                <span class="badge badge-points">${task.points} graines</span>
+              </div>
+              <button class="btn-ghost" onclick="deleteTask('${task.id}')">Supprimer la tâche</button>
+            </div>
+          `;
+        });
+      }
+
+      if (state.rewards.length > 0) {
+        html += `<div style="margin:18px 0 16px;"><strong>Récompenses créées</strong></div>`;
+        state.rewards.forEach(reward => {
+          html += `
+            <div class="reward-item">
+              <div class="reward-top">
+                <strong>${escapeHtml(reward.name)}</strong>
+                <span class="badge badge-cost">${reward.cost} graines</span>
+              </div>
+              <button class="btn-ghost" onclick="deleteReward('${reward.id}')">Supprimer la récompense</button>
+            </div>
+          `;
+        });
+      }
+
+      container.innerHTML = html;
+    }
+
+    function renderHistory() {
+      const container = document.getElementById("historyList");
+      container.innerHTML = "";
+
+      if (state.history.length === 0) {
+        container.innerHTML = `<div class="empty">Pas encore d’historique.</div>`;
+        return;
+      }
+
+      container.innerHTML = state.history.map(item => `
+        <div class="history-item">
+          <div>${escapeHtml(item.message)}</div>
+          <div class="small" style="margin-top:6px;">${escapeHtml(item.date)}</div>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function render() {
+      renderSelects();
+      renderChildren();
+      renderRewardsPanel();
+      renderHistory();
+    }
+
+    loadState();
+    render();
+  </script>
+</body>
+</html>
