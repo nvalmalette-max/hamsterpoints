@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:table_calendar/table_calendar.dart';
-
-const String _kStorageKey = 'hamsterpoints_v3';
+import 'firebase_options.dart';
 
 const List<String> kTaskIcons = [
   '🧹','🧽','🍽️','🛏️','🛁','🚿','🪣','🗑️',
@@ -42,12 +42,11 @@ enum HamsterStage   { egg, baby, small, medium, large, legend }
 enum HamsterMood    { sleeping, sad, neutral, happy, excited }
 
 class AppPalette {
-  static const Color parentBg     = Color(0xFFF7F2E8);
-  static const Color green        = Color(0xFF7BA05B);
-  static const Color softGreen    = Color(0xFFDDE8CF);
-  static const Color brown        = Color(0xFF6F5B46);
-  static const Color gold         = Color(0xFFD7B96A);
-  static const Color kawaiiMint   = Color(0xFF7DCEA0);
+  static const Color parentBg   = Color(0xFFF7F2E8);
+  static const Color green      = Color(0xFF7BA05B);
+  static const Color softGreen  = Color(0xFFDDE8CF);
+  static const Color brown      = Color(0xFF6F5B46);
+  static const Color kawaiiMint = Color(0xFF7DCEA0);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -157,7 +156,7 @@ class ScheduledTask {
 }
 
 // ══════════════════════════════════════════════════════════════
-// APP DATA
+// APP DATA — sauvegarde dans Firestore
 // ══════════════════════════════════════════════════════════════
 
 class AppData {
@@ -171,6 +170,11 @@ class AppData {
 
   static int get pendingCount =>
       scheduledTasks.where((t) => t.pendingValidation && !t.done).length;
+
+  static DocumentReference get _doc {
+    final user = FirebaseAuth.instance.currentUser!;
+    return FirebaseFirestore.instance.collection('users').doc(user.uid);
+  }
 
   static List<DateTime> generateDates(
       DateTime start, DateTime? end, RecurrenceType type) {
@@ -196,28 +200,34 @@ class AppData {
   }
 
   static Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kStorageKey, jsonEncode({
+    if (FirebaseAuth.instance.currentUser == null) return;
+    await _doc.set({
       'children':       children.map((e) => e.toJson()).toList(),
       'rewards':        rewards.map((e) => e.toJson()).toList(),
       'taskTemplates':  taskTemplates.map((e) => e.toJson()).toList(),
       'scheduledTasks': scheduledTasks.map((e) => e.toJson()).toList(),
       'parentPin':      parentPin,
-    }));
+    });
   }
 
   static Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kStorageKey);
-    if (raw == null) return;
+    if (FirebaseAuth.instance.currentUser == null) return;
+    final doc = await _doc.get();
+    if (!doc.exists || doc.data() == null) return;
+    final data = doc.data()! as Map<String, dynamic>;
     try {
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      children       = (data['children']       as List? ?? []).map((e) => ChildProfile.fromJson(e  as Map<String, dynamic>)).toList();
-      rewards        = (data['rewards']        as List? ?? []).map((e) => RewardItem.fromJson(e    as Map<String, dynamic>)).toList();
-      taskTemplates  = (data['taskTemplates']  as List? ?? []).map((e) => TaskTemplate.fromJson(e  as Map<String, dynamic>)).toList();
-      scheduledTasks = (data['scheduledTasks'] as List? ?? []).map((e) => ScheduledTask.fromJson(e as Map<String, dynamic>)).toList();
+      Map<String, dynamic> asMap(dynamic e) => Map<String, dynamic>.from(e as Map);
+      children       = (data['children']       as List? ?? []).map((e) => ChildProfile.fromJson(asMap(e))).toList();
+      rewards        = (data['rewards']        as List? ?? []).map((e) => RewardItem.fromJson(asMap(e))).toList();
+      taskTemplates  = (data['taskTemplates']  as List? ?? []).map((e) => TaskTemplate.fromJson(asMap(e))).toList();
+      scheduledTasks = (data['scheduledTasks'] as List? ?? []).map((e) => ScheduledTask.fromJson(asMap(e))).toList();
       parentPin      = data['parentPin'] as String? ?? '';
     } catch (_) {}
+  }
+
+  static void clear() {
+    children = []; rewards = []; taskTemplates = [];
+    scheduledTasks = []; parentPin = '';
   }
 }
 
@@ -227,7 +237,7 @@ class AppData {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppData.load();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const HamsterPointsApp());
 }
 
@@ -243,7 +253,158 @@ class HamsterPointsApp extends StatelessWidget {
         scaffoldBackgroundColor: AppPalette.parentBg,
         colorScheme: ColorScheme.fromSeed(seedColor: AppPalette.green),
       ),
-      home: const AppGateScreen(),
+      home: const AuthGateScreen(),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUTH GATE — vérifie si connecté
+// ══════════════════════════════════════════════════════════════
+
+class AuthGateScreen extends StatelessWidget {
+  const AuthGateScreen({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasData) return const _AppLoader();
+        return const LoginScreen();
+      },
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APP LOADER — charge les données puis affiche l'app
+// ══════════════════════════════════════════════════════════════
+
+class _AppLoader extends StatefulWidget {
+  const _AppLoader();
+  @override
+  State<_AppLoader> createState() => _AppLoaderState();
+}
+
+class _AppLoaderState extends State<_AppLoader> {
+  bool _loaded = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    AppData.load().then((_) {
+      if (mounted) setState(() => _loaded = true);
+    }).catchError((e) {
+      if (mounted) setState(() => _error = e.toString());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Scaffold(
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Erreur de chargement', style: TextStyle(fontSize: 18)),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: () {
+              setState(() { _error = null; _loaded = false; });
+              AppData.load().then((_) {
+                if (mounted) setState(() => _loaded = true);
+              });
+            },
+            child: const Text('Réessayer'),
+          ),
+        ])),
+      );
+    }
+    if (!_loaded) {
+      return const Scaffold(
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Chargement...'),
+        ])),
+      );
+    }
+    return const AppGateScreen();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LOGIN SCREEN
+// ══════════════════════════════════════════════════════════════
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  bool _loading = false;
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _loading = true);
+    try {
+      final provider = GoogleAuthProvider();
+      await FirebaseAuth.instance.signInWithPopup(provider);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e')));
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppPalette.parentBg,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('🐹', style: TextStyle(fontSize: 80)),
+              const SizedBox(height: 16),
+              const Text('HamsterPoints',
+                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(
+                'Connecte-toi pour accéder à tes données\net les synchroniser entre tes appareils.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 48),
+              if (_loading)
+                const CircularProgressIndicator()
+              else
+                ElevatedButton.icon(
+                  onPressed: _signInWithGoogle,
+                  icon: const Text('G',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                                       color: Color(0xFF4285F4))),
+                  label: const Text('Continuer avec Google',
+                      style: TextStyle(fontSize: 16)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black87,
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+                    side: BorderSide(color: Colors.grey.shade300),
+                    elevation: 2,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -306,7 +467,8 @@ class _AppGateScreenState extends State<AppGateScreen> {
     return Scaffold(
       backgroundColor: AppPalette.parentBg,
       appBar: AppBar(
-        title: const Text('🐹 HamsterPoints', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('🐹 HamsterPoints',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: AppPalette.softGreen,
       ),
       body: ListView(
@@ -767,11 +929,9 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         leading: Text(t.icon.isEmpty ? '📌' : t.icon, style: const TextStyle(fontSize: 20)),
         title: Text(t.title, style: const TextStyle(fontSize: 13)),
         subtitle: Text(
-          t.done
-              ? '✅ Validé · ${t.childName}'
-              : t.pendingValidation
-                  ? '⏳ En attente · ${t.childName}'
-                  : t.childName,
+          t.done ? '✅ Validé · ${t.childName}'
+              : t.pendingValidation ? '⏳ En attente · ${t.childName}'
+              : t.childName,
           style: TextStyle(fontSize: 11,
               color: t.pendingValidation && !t.done ? Colors.orange.shade700 : null),
         ),
@@ -1113,11 +1273,51 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  Future<void> _signOut() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Se déconnecter ?'),
+        content: const Text(
+            'Tes données restent sauvegardées dans le cloud.\nTu pourras te reconnecter à tout moment.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Déconnecter'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      AppData.clear();
+      await FirebaseAuth.instance.signOut();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // ── Compte ────────────────────────────────────────
+        _header('👤 Compte'),
+        ListTile(
+          leading: const Icon(Icons.account_circle, size: 36, color: AppPalette.green),
+          title: Text(user?.displayName ?? user?.email ?? 'Connecté'),
+          subtitle: Text(user?.email ?? ''),
+          trailing: TextButton.icon(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout, size: 18),
+            label: const Text('Déconnecter'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+          ),
+        ),
+        const Divider(height: 32),
+
         // ── PIN ───────────────────────────────────────────
         _header('🔒 Code PIN parent'),
         ListTile(
@@ -1252,7 +1452,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   late final Animation<double>    _bounceAnim;
   late final AnimationController _sparkle;
   late final Animation<double>    _sparkleAnim;
-  DateTime _calDay  = DateTime.now();
+  DateTime _calDay   = DateTime.now();
   DateTime _calFocus = DateTime.now();
 
   ChildProfile? get _child {
@@ -1289,13 +1489,9 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   Widget build(BuildContext context) {
     final child = _child;
     if (child == null) {
-      return const Scaffold(
-        body: Center(child: Text('Profil introuvable 😢')),
-      );
+      return const Scaffold(body: Center(child: Text('Profil introuvable 😢')));
     }
-
     final scheme = child.colorScheme;
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -1310,7 +1506,8 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
             tabs: [
-              Tab(icon: Text(child.animal, style: const TextStyle(fontSize: 20)), text: 'Mon compagnon'),
+              Tab(icon: Text(child.animal, style: const TextStyle(fontSize: 20)),
+                  text: 'Mon compagnon'),
               const Tab(icon: Icon(Icons.calendar_month), text: 'Mon calendrier'),
             ],
           ),
@@ -1323,14 +1520,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     );
   }
 
-  // ── Onglet compagnon ──────────────────────────────────────
-
   Widget _hamsterTab(ChildProfile child) {
     final tasks = AppData.scheduledTasks
-        .where((t) => t.childId == child.id)
-        .toList()
+        .where((t) => t.childId == child.id).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       children: [
@@ -1343,8 +1536,6 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
       ],
     );
   }
-
-  // ── Onglet calendrier enfant ──────────────────────────────
 
   Widget _calendarTab(ChildProfile child) {
     final scheme = child.colorScheme;
@@ -1377,11 +1568,9 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
                 cellMargin: const EdgeInsets.all(1),
                 defaultTextStyle: const TextStyle(fontSize: 11),
                 weekendTextStyle: const TextStyle(fontSize: 11, color: Colors.redAccent),
-                selectedDecoration: BoxDecoration(
-                    color: scheme.accent, shape: BoxShape.circle),
+                selectedDecoration: BoxDecoration(color: scheme.accent, shape: BoxShape.circle),
                 todayDecoration: BoxDecoration(
-                    color: scheme.accent.withValues(alpha: 0.4),
-                    shape: BoxShape.circle),
+                    color: scheme.accent.withValues(alpha: 0.4), shape: BoxShape.circle),
                 outsideDaysVisible: false,
                 markersMaxCount: 0,
               ),
@@ -1411,8 +1600,6 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
       ],
     );
   }
-
-  // ── Zone compagnon ────────────────────────────────────────
 
   Widget _hamsterZone(ChildProfile child) {
     return Column(children: [
@@ -1448,9 +1635,9 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     const z = 200.0;
     final s = _stageSize(child.stage);
     final m = child.mood;
-    final sparkle  = m == HamsterMood.excited || m == HamsterMood.happy;
-    final crown    = child.stage.index >= HamsterStage.large.index;
-    final rainbow  = child.stage == HamsterStage.legend;
+    final sparkle = m == HamsterMood.excited || m == HamsterMood.happy;
+    final crown   = child.stage.index >= HamsterStage.large.index;
+    final rainbow = child.stage == HamsterStage.legend;
 
     return SizedBox(width: z, height: z, child: Stack(alignment: Alignment.center, children: [
       Container(
@@ -1474,8 +1661,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
         ),
         Container(
           width: s + 48, height: s + 48,
-          decoration: BoxDecoration(
-              shape: BoxShape.circle,
+          decoration: BoxDecoration(shape: BoxShape.circle,
               color: Colors.white.withValues(alpha: 0.9)),
         ),
       ],
@@ -1524,8 +1710,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [scheme.accent.withValues(alpha: 0.85),
-                   scheme.accent.withValues(alpha: 0.6)],
+          colors: [scheme.accent.withValues(alpha: 0.85), scheme.accent.withValues(alpha: 0.6)],
           begin: Alignment.topLeft, end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(28),
@@ -1565,10 +1750,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   }
 
   Widget _kawaiiTaskTile(ScheduledTask t, ChildProfile child) {
-    final scheme    = child.colorScheme;
-    final now       = DateTime.now();
-    final isPast    = !t.date.isAfter(DateTime(now.year, now.month, now.day));
-    final canMark   = !t.done && !t.pendingValidation && isPast;
+    final scheme  = child.colorScheme;
+    final now     = DateTime.now();
+    final isPast  = !t.date.isAfter(DateTime(now.year, now.month, now.day));
+    final canMark = !t.done && !t.pendingValidation && isPast;
 
     final borderColor = t.done
         ? AppPalette.kawaiiMint
@@ -1611,8 +1796,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                  color: scheme.accent,
-                  borderRadius: BorderRadius.circular(20)),
+                  color: scheme.accent, borderRadius: BorderRadius.circular(20)),
               child: const Text('J\'ai fini ! 🙋',
                   style: TextStyle(color: Colors.white, fontSize: 12)),
             ),
@@ -1620,8 +1804,6 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
       ]),
     );
   }
-
-  // ── Helpers ───────────────────────────────────────────────
 
   String _stageEmoji(HamsterStage s, String animal) => switch (s) {
     HamsterStage.egg    => '🥚',
