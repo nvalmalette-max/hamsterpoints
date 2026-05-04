@@ -240,6 +240,8 @@ class AppData {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Complète la connexion si on revient d'une redirection Google
+  try { await FirebaseAuth.instance.getRedirectResult(); } catch (_) {}
   runApp(const HamsterPointsApp());
 }
 
@@ -354,7 +356,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       final provider = GoogleAuthProvider();
-      await FirebaseAuth.instance.signInWithPopup(provider);
+      await FirebaseAuth.instance.signInWithRedirect(provider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
