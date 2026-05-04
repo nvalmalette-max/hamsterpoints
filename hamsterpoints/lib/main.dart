@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'firebase_options.dart';
 
@@ -171,9 +171,9 @@ class AppData {
   static int get pendingCount =>
       scheduledTasks.where((t) => t.pendingValidation && !t.done).length;
 
-  static DocumentReference get _doc {
+  static DatabaseReference get _ref {
     final user = FirebaseAuth.instance.currentUser!;
-    return FirebaseFirestore.instance.collection('users').doc(user.uid);
+    return FirebaseDatabase.instance.ref('users/${user.uid}');
   }
 
   static List<DateTime> generateDates(
@@ -201,7 +201,7 @@ class AppData {
 
   static Future<void> save() async {
     if (FirebaseAuth.instance.currentUser == null) return;
-    await _doc.set({
+    await _ref.set({
       'children':       children.map((e) => e.toJson()).toList(),
       'rewards':        rewards.map((e) => e.toJson()).toList(),
       'taskTemplates':  taskTemplates.map((e) => e.toJson()).toList(),
@@ -212,15 +212,17 @@ class AppData {
 
   static Future<void> load() async {
     if (FirebaseAuth.instance.currentUser == null) return;
-    final doc = await _doc.get();
-    if (!doc.exists || doc.data() == null) return;
-    final data = doc.data()! as Map<String, dynamic>;
+    final snapshot = await _ref.get();
+    if (!snapshot.exists || snapshot.value == null) return;
+    final data = Map<String, dynamic>.from(snapshot.value as Map);
     try {
       Map<String, dynamic> asMap(dynamic e) => Map<String, dynamic>.from(e as Map);
-      children       = (data['children']       as List? ?? []).map((e) => ChildProfile.fromJson(asMap(e))).toList();
-      rewards        = (data['rewards']        as List? ?? []).map((e) => RewardItem.fromJson(asMap(e))).toList();
-      taskTemplates  = (data['taskTemplates']  as List? ?? []).map((e) => TaskTemplate.fromJson(asMap(e))).toList();
-      scheduledTasks = (data['scheduledTasks'] as List? ?? []).map((e) => ScheduledTask.fromJson(asMap(e))).toList();
+      List<T> asList<T>(String key, T Function(Map<String, dynamic>) f) =>
+          (data[key] as List? ?? []).map((e) => f(asMap(e))).toList();
+      children       = asList('children',       ChildProfile.fromJson);
+      rewards        = asList('rewards',        RewardItem.fromJson);
+      taskTemplates  = asList('taskTemplates',  TaskTemplate.fromJson);
+      scheduledTasks = asList('scheduledTasks', ScheduledTask.fromJson);
       parentPin      = data['parentPin'] as String? ?? '';
     } catch (_) {}
   }
