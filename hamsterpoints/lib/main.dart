@@ -366,7 +366,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       final provider = GoogleAuthProvider();
-      await FirebaseAuth.instance.signInWithRedirect(provider);
+      await FirebaseAuth.instance.signInWithPopup(provider);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1315,10 +1315,11 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
         ],
       ),
     );
-    if (confirm == true) {
-      AppData.clear();
-      await FirebaseAuth.instance.signOut();
-    }
+    if (confirm != true || !mounted) return;
+    final navigator = Navigator.of(context);
+    AppData.clear();
+    await FirebaseAuth.instance.signOut();
+    navigator.popUntil((route) => route.isFirst);
   }
 
   @override
