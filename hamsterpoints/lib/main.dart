@@ -1,3 +1,7 @@
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
+import 'dart:html' as html;
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -6,14 +10,25 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'firebase_options.dart';
 
+// ══════════════════════════════════════════════════════════════
+// CONSTANTES
+// ══════════════════════════════════════════════════════════════
+
 const List<String> kTaskIcons = [
+  // Ménage
   '🧹','🧽','🍽️','🛏️','🛁','🚿','🪣','🗑️',
+  // Études
   '📚','✏️','📖','🎒','📝','📐','🔬',
+  // Nature / animaux
   '🌿','🌻','🌱','🐕','🐱','🐠',
+  // Sport
   '🏃','🚴','⚽','🎯','🏊',
+  // Créativité
   '🎨','🎵','🎸','🎭','🖌️',
-  '🛒','🍳','🧁','🍎','💊',
-  '🚗','🚲','⭐','💪','🤝','🎁',
+  // Vie quotidienne
+  '🛒','🍳','🧁','🍎','💊','🚗','🚲','⭐','💪','🤝','🎁',
+  // Pénalités / alertes
+  '⚠️','🚫','❌','💣','👎','😤','🙅','📵','💢','🔇',
 ];
 
 const List<String> kChildAnimals = [
@@ -106,7 +121,9 @@ class ChildProfile {
 }
 
 class RewardItem {
-  final String id; String title; int costSeeds;
+  final String id;
+  String title;
+  int costSeeds;
   RewardItem({required this.id, required this.title, required this.costSeeds});
   Map<String, dynamic> toJson() => {'id': id, 'title': title, 'costSeeds': costSeeds};
   factory RewardItem.fromJson(Map<String, dynamic> j) =>
@@ -115,7 +132,10 @@ class RewardItem {
 }
 
 class TaskTemplate {
-  final String id; String title; String icon; int rewardSeeds;
+  final String id;
+  String title;
+  String icon;
+  int rewardSeeds;
   TaskTemplate({required this.id, required this.title,
                 required this.icon, required this.rewardSeeds});
   Map<String, dynamic> toJson() =>
@@ -133,16 +153,19 @@ class ScheduledTask {
   int rewardSeeds;
   DateTime date;
   bool done, pendingValidation;
+  String? photoBase64;
 
   ScheduledTask({required this.id, required this.childId, required this.childName,
       required this.title, required this.icon, required this.rewardSeeds,
-      required this.date, this.done = false, this.pendingValidation = false});
+      required this.date, this.done = false, this.pendingValidation = false,
+      this.photoBase64});
 
   Map<String, dynamic> toJson() => {
     'id': id, 'childId': childId, 'childName': childName,
     'title': title, 'icon': icon, 'rewardSeeds': rewardSeeds,
     'date': date.toIso8601String(), 'done': done,
     'pendingValidation': pendingValidation,
+    if (photoBase64 != null) 'photoBase64': photoBase64,
   };
   factory ScheduledTask.fromJson(Map<String, dynamic> j) => ScheduledTask(
     id: j['id'] as String, childId: j['childId'] as String,
@@ -152,11 +175,12 @@ class ScheduledTask {
     date: DateTime.parse(j['date'] as String),
     done: j['done'] as bool? ?? false,
     pendingValidation: j['pendingValidation'] as bool? ?? false,
+    photoBase64: j['photoBase64'] as String?,
   );
 }
 
 // ══════════════════════════════════════════════════════════════
-// APP DATA — sauvegarde dans Firestore
+// APP DATA
 // ══════════════════════════════════════════════════════════════
 
 class AppData {
@@ -168,6 +192,7 @@ class AppData {
   static bool                moneyEnabled   = false;
   static double              moneyPerSeed   = 0.10;
   static String              currencySymbol = '€';
+  static bool                photoProofEnabled = false;
 
   static String uid() => DateTime.now().microsecondsSinceEpoch.toString();
 
@@ -205,14 +230,15 @@ class AppData {
   static Future<void> save() async {
     if (FirebaseAuth.instance.currentUser == null) return;
     await _ref.set({
-      'children':       children.map((e) => e.toJson()).toList(),
-      'rewards':        rewards.map((e) => e.toJson()).toList(),
-      'taskTemplates':  taskTemplates.map((e) => e.toJson()).toList(),
-      'scheduledTasks': scheduledTasks.map((e) => e.toJson()).toList(),
-      'parentPin':      parentPin,
-      'moneyEnabled':   moneyEnabled,
-      'moneyPerSeed':   moneyPerSeed,
-      'currencySymbol': currencySymbol,
+      'children':          children.map((e) => e.toJson()).toList(),
+      'rewards':           rewards.map((e) => e.toJson()).toList(),
+      'taskTemplates':     taskTemplates.map((e) => e.toJson()).toList(),
+      'scheduledTasks':    scheduledTasks.map((e) => e.toJson()).toList(),
+      'parentPin':         parentPin,
+      'moneyEnabled':      moneyEnabled,
+      'moneyPerSeed':      moneyPerSeed,
+      'currencySymbol':    currencySymbol,
+      'photoProofEnabled': photoProofEnabled,
     });
   }
 
@@ -229,10 +255,11 @@ class AppData {
       rewards        = asList('rewards',        RewardItem.fromJson);
       taskTemplates  = asList('taskTemplates',  TaskTemplate.fromJson);
       scheduledTasks = asList('scheduledTasks', ScheduledTask.fromJson);
-      parentPin      = data['parentPin']      as String? ?? '';
-      moneyEnabled   = data['moneyEnabled']   as bool?   ?? false;
-      moneyPerSeed   = (data['moneyPerSeed']  as num?    ?? 0.10).toDouble();
-      currencySymbol = data['currencySymbol'] as String? ?? '€';
+      parentPin         = data['parentPin']         as String? ?? '';
+      moneyEnabled      = data['moneyEnabled']      as bool?   ?? false;
+      moneyPerSeed      = (data['moneyPerSeed']     as num?    ?? 0.10).toDouble();
+      currencySymbol    = data['currencySymbol']    as String? ?? '€';
+      photoProofEnabled = data['photoProofEnabled'] as bool?   ?? false;
     } catch (_) {}
   }
 
@@ -240,7 +267,54 @@ class AppData {
     children = []; rewards = []; taskTemplates = [];
     scheduledTasks = []; parentPin = '';
     moneyEnabled = false; moneyPerSeed = 0.10; currencySymbol = '€';
+    photoProofEnabled = false;
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// PHOTO PICKER (web uniquement)
+// ══════════════════════════════════════════════════════════════
+
+Future<String?> pickImageAsBase64() {
+  final completer = Completer<String?>();
+  final input = html.FileUploadInputElement()..accept = 'image/*';
+
+  input.onChange.listen((_) {
+    final file = input.files?.first;
+    if (file == null) {
+      if (!completer.isCompleted) completer.complete(null);
+      return;
+    }
+    final reader = html.FileReader();
+    reader.onLoad.listen((_) {
+      final dataUrl = reader.result as String;
+      final img = html.ImageElement();
+      img.onLoad.listen((_) {
+        const maxDim = 500;
+        int w = img.naturalWidth, h = img.naturalHeight;
+        if (w == 0 || h == 0) {
+          if (!completer.isCompleted) completer.complete(dataUrl);
+          return;
+        }
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = (h * maxDim ~/ w); w = maxDim; }
+          else        { w = (w * maxDim ~/ h); h = maxDim; }
+        }
+        final canvas = html.CanvasElement();
+        canvas.width = w;
+        canvas.height = h;
+        canvas.context2D.drawImageScaled(img, 0, 0, w, h);
+        if (!completer.isCompleted) {
+          completer.complete(canvas.toDataUrl('image/jpeg', 0.75));
+        }
+      });
+      img.src = dataUrl;
+    });
+    reader.readAsDataUrl(file);
+  });
+
+  input.click();
+  return completer.future;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -250,7 +324,6 @@ class AppData {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // Complète la connexion si on revient d'une redirection Google
   try { await FirebaseAuth.instance.getRedirectResult(); } catch (_) {}
   runApp(const HamsterPointsApp());
 }
@@ -273,7 +346,7 @@ class HamsterPointsApp extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════
-// AUTH GATE — vérifie si connecté
+// AUTH GATE
 // ══════════════════════════════════════════════════════════════
 
 class AuthGateScreen extends StatelessWidget {
@@ -294,7 +367,7 @@ class AuthGateScreen extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════
-// APP LOADER — charge les données puis affiche l'app
+// APP LOADER
 // ══════════════════════════════════════════════════════════════
 
 class _AppLoader extends StatefulWidget {
@@ -704,9 +777,10 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     setState(() {
       task.done = true;
       task.pendingValidation = false;
+      task.photoBase64 = null;
       child.seedsBalance  += task.rewardSeeds;
-      child.lifetimeSeeds += task.rewardSeeds;
-      child.lastTaskDate   = DateTime.now().toIso8601String();
+      if (task.rewardSeeds > 0) child.lifetimeSeeds += task.rewardSeeds;
+      child.lastTaskDate = DateTime.now().toIso8601String();
     });
     await AppData.save();
     widget.onRefresh();
@@ -814,24 +888,7 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
               Text('⚠️ ${pending.length} tâche${pending.length > 1 ? "s" : ""} à valider',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
               const SizedBox(height: 6),
-              ...pending.map((t) => ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Text(t.icon.isEmpty ? '📌' : t.icon,
-                              style: const TextStyle(fontSize: 20)),
-                title: Text(t.title, style: const TextStyle(fontSize: 13)),
-                subtitle: Text('${t.childName} · ${t.date.day}/${t.date.month}',
-                               style: const TextStyle(fontSize: 11)),
-                trailing: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green, foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                  ),
-                  onPressed: () => _validate(t),
-                  child: const Text('Valider', style: TextStyle(fontSize: 12)),
-                ),
-              )),
+              ...pending.map((t) => _pendingTile(t)),
             ]),
           ),
 
@@ -926,6 +983,45 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     );
   }
 
+  Widget _pendingTile(ScheduledTask t) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(t.icon.isEmpty ? '📌' : t.icon, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 8),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(t.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            Text('${t.childName} · ${t.date.day}/${t.date.month}',
+                style: const TextStyle(fontSize: 11)),
+          ])),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            onPressed: () => _validate(t),
+            child: const Text('Valider', style: TextStyle(fontSize: 12)),
+          ),
+        ]),
+        if (t.photoBase64 != null) ...[
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              base64Decode(t.photoBase64!.split(',').last),
+              height: 100,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+          ),
+        ],
+        const Divider(height: 12),
+      ]),
+    );
+  }
+
   Widget _taskTile(ScheduledTask t) {
     final borderColor = t.done
         ? Colors.green.shade200
@@ -950,7 +1046,11 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
               color: t.pendingValidation && !t.done ? Colors.orange.shade700 : null),
         ),
         trailing: t.done
-            ? Text('${t.rewardSeeds} 🌱', style: const TextStyle(fontSize: 12))
+            ? Text('${t.rewardSeeds} 🌱',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: t.rewardSeeds < 0 ? Colors.red : null,
+                ))
             : Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
                   icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
@@ -1051,7 +1151,7 @@ class _ParentRewardsScreenState extends State<ParentRewardsScreen> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// PARENT SETTINGS
+// PARENT SETTINGS — MENU PRINCIPAL
 // ══════════════════════════════════════════════════════════════
 
 class ParentSettingsScreen extends StatefulWidget {
@@ -1062,29 +1162,65 @@ class ParentSettingsScreen extends StatefulWidget {
 }
 
 class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
-  final _taskCtrl       = TextEditingController();
-  final _taskPtsCtrl    = TextEditingController(text: '5');
-  final _rewardCtrl     = TextEditingController();
-  final _rewardCostCtrl = TextEditingController(text: '20');
-  late final TextEditingController _moneyRateCtrl;
-  late final TextEditingController _currencyCtrl;
-  String _icon = '📌';
-
-  @override
-  void initState() {
-    super.initState();
-    _moneyRateCtrl = TextEditingController(text: AppData.moneyPerSeed.toString());
-    _currencyCtrl  = TextEditingController(text: AppData.currencySymbol);
+  Future<void> _go(Widget screen) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    setState(() {});
+    widget.onRefresh();
   }
 
   @override
-  void dispose() {
-    _taskCtrl.dispose(); _taskPtsCtrl.dispose();
-    _rewardCtrl.dispose(); _rewardCostCtrl.dispose();
-    _moneyRateCtrl.dispose(); _currencyCtrl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    return ListView(
+      children: [
+        _tile(Icons.people_outline, 'Enfants',
+            '${AppData.children.length} enfant(s) configuré(s)',
+            () => _go(_ChildrenSettingsScreen(onRefresh: widget.onRefresh))),
+        _tile(Icons.task_alt, 'Tâches',
+            '${AppData.taskTemplates.length} tâche(s) définie(s)',
+            () => _go(_TasksSettingsScreen(onRefresh: widget.onRefresh))),
+        _tile(Icons.card_giftcard_outlined, 'Récompenses',
+            '${AppData.rewards.length} récompense(s) définie(s)',
+            () => _go(_RewardsSettingsScreen(onRefresh: widget.onRefresh))),
+        _tile(Icons.lock_outline, 'Code PIN',
+            AppData.parentPin.isEmpty ? 'Non défini — accès libre' : 'Code défini ●●●●',
+            () => _go(_PinSettingsScreen(onRefresh: widget.onRefresh))),
+        _tile(Icons.monetization_on_outlined, 'Valeur des graines',
+            AppData.moneyEnabled
+                ? 'Activé — 1 graine = ${AppData.moneyPerSeed} ${AppData.currencySymbol}'
+                : 'Désactivé',
+            () => _go(_MoneySettingsScreen(onRefresh: widget.onRefresh))),
+        const Divider(height: 1),
+        _tile(Icons.account_circle_outlined, 'Compte',
+            user?.email ?? 'Connecté',
+            () => _go(_AccountSettingsScreen(onRefresh: widget.onRefresh))),
+      ],
+    );
   }
 
+  Widget _tile(IconData icon, String title, String subtitle, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppPalette.green),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      onTap: onTap,
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : ENFANTS
+// ══════════════════════════════════════════════════════════════
+
+class _ChildrenSettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _ChildrenSettingsScreen({required this.onRefresh});
+  @override
+  State<_ChildrenSettingsScreen> createState() => _ChildrenSettingsScreenState();
+}
+
+class _ChildrenSettingsScreenState extends State<_ChildrenSettingsScreen> {
   Future<void> _showChildDialog({ChildProfile? existing}) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     String selectedAnimal = existing?.animal ?? kChildAnimals[0];
@@ -1100,6 +1236,7 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               TextField(
                 controller: nameCtrl,
                 autofocus: existing == null,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Prénom'),
               ),
               const SizedBox(height: 20),
@@ -1130,7 +1267,8 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               const SizedBox(height: 20),
               const Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Couleur de la page', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                child: Text('Couleur de la page',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1190,56 +1328,385 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
-  Future<void> _addTask() async {
-    final title = _taskCtrl.text.trim();
-    final pts   = int.tryParse(_taskPtsCtrl.text) ?? 0;
-    if (title.isEmpty || pts <= 0) return;
-    setState(() => AppData.taskTemplates.add(
-        TaskTemplate(id: AppData.uid(), title: title, icon: _icon, rewardSeeds: pts)));
-    _taskCtrl.clear(); _taskPtsCtrl.text = '5';
-    await AppData.save();
-  }
-
-  Future<void> _addReward() async {
-    final title = _rewardCtrl.text.trim();
-    final cost  = int.tryParse(_rewardCostCtrl.text) ?? 0;
-    if (title.isEmpty || cost <= 0) return;
-    setState(() => AppData.rewards.add(
-        RewardItem(id: AppData.uid(), title: title, costSeeds: cost)));
-    _rewardCtrl.clear(); _rewardCostCtrl.text = '20';
-    await AppData.save();
-  }
-
-  void _showIconPicker() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Enfants'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Choisir une icône',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: kTaskIcons.map((ico) => GestureDetector(
-              onTap: () { setState(() => _icon = ico); Navigator.pop(ctx); },
-              child: Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: _icon == ico ? AppPalette.softGreen : Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Center(child: Text(ico, style: const TextStyle(fontSize: 22))),
-              ),
-            )).toList(),
+        children: [
+          ElevatedButton.icon(
+            onPressed: () async {
+              await _showChildDialog();
+              setState(() {});
+            },
+            icon: const Icon(Icons.person_add),
+            label: const Text('Ajouter un enfant'),
           ),
-        ]),
+          const SizedBox(height: 12),
+          if (AppData.children.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Aucun enfant ajouté.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+            )
+          else
+            ...AppData.children.map((c) => Card(
+              child: ListTile(
+                leading: Text(c.animal, style: const TextStyle(fontSize: 26)),
+                title: Text(c.name),
+                subtitle: Text('${c.seedsBalance} graines · ${c.lifetimeSeeds} au total'),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                    tooltip: 'Modifier',
+                    onPressed: () async {
+                      await _showChildDialog(existing: c);
+                      setState(() {});
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Supprimer',
+                    onPressed: () async {
+                      setState(() => AppData.children.remove(c));
+                      await AppData.save();
+                      widget.onRefresh();
+                    },
+                  ),
+                ]),
+              ),
+            )),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : TÂCHES
+// ══════════════════════════════════════════════════════════════
+
+class _TasksSettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _TasksSettingsScreen({required this.onRefresh});
+  @override
+  State<_TasksSettingsScreen> createState() => _TasksSettingsScreenState();
+}
+
+class _TasksSettingsScreenState extends State<_TasksSettingsScreen> {
+  Future<void> _showTaskDialog({TaskTemplate? existing}) async {
+    String selectedIcon = existing?.icon ?? '📌';
+    final titleCtrl  = TextEditingController(text: existing?.title ?? '');
+    final seedsCtrl  = TextEditingController(
+        text: existing?.rewardSeeds.toString() ?? '5');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text(existing == null ? 'Ajouter une tâche' : 'Modifier la tâche'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Icône',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+                                     color: Colors.grey.shade700)),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 200,
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 6, runSpacing: 6,
+                    children: kTaskIcons.map((ico) => GestureDetector(
+                      onTap: () => setS(() => selectedIcon = ico),
+                      child: Container(
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(
+                          color: selectedIcon == ico
+                              ? AppPalette.softGreen : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: selectedIcon == ico
+                              ? Border.all(color: AppPalette.green, width: 2)
+                              : null,
+                        ),
+                        child: Center(child: Text(ico,
+                            style: const TextStyle(fontSize: 18))),
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: titleCtrl,
+                autofocus: existing == null,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Nom de la tâche',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: seedsCtrl,
+                keyboardType: const TextInputType.numberWithOptions(signed: true),
+                decoration: const InputDecoration(
+                  labelText: 'Graines',
+                  helperText: 'Valeur négative = pénalité',
+                  isDense: true,
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () async {
+                final title = titleCtrl.text.trim();
+                final seeds = int.tryParse(seedsCtrl.text) ?? 0;
+                if (title.isEmpty || seeds == 0) return;
+                setState(() {
+                  if (existing == null) {
+                    AppData.taskTemplates.add(TaskTemplate(
+                      id: AppData.uid(), title: title,
+                      icon: selectedIcon, rewardSeeds: seeds,
+                    ));
+                  } else {
+                    existing.title = title;
+                    existing.icon  = selectedIcon;
+                    existing.rewardSeeds = seeds;
+                  }
+                });
+                await AppData.save();
+                widget.onRefresh();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tâches'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SwitchListTile(
+            title: const Text('Preuve en photo'),
+            subtitle: Text(AppData.photoProofEnabled
+                ? 'Les enfants peuvent joindre une photo'
+                : 'Option désactivée'),
+            value: AppData.photoProofEnabled,
+            onChanged: (v) async {
+              setState(() => AppData.photoProofEnabled = v);
+              await AppData.save();
+            },
+          ),
+          const Divider(height: 24),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await _showTaskDialog();
+              setState(() {});
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Ajouter une tâche'),
+          ),
+          const SizedBox(height: 8),
+          if (AppData.taskTemplates.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Aucune tâche définie.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+            )
+          else
+            ...AppData.taskTemplates.map((t) => Card(
+              child: ListTile(
+                leading: Text(t.icon, style: const TextStyle(fontSize: 22)),
+                title: Text(t.title),
+                subtitle: Text(
+                  '${t.rewardSeeds} graine${t.rewardSeeds.abs() > 1 ? "s" : ""}',
+                  style: TextStyle(
+                    color: t.rewardSeeds < 0 ? Colors.red : Colors.grey.shade600,
+                    fontWeight: t.rewardSeeds < 0 ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                    tooltip: 'Modifier',
+                    onPressed: () async {
+                      await _showTaskDialog(existing: t);
+                      setState(() {});
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Supprimer',
+                    onPressed: () async {
+                      setState(() => AppData.taskTemplates.remove(t));
+                      await AppData.save();
+                      widget.onRefresh();
+                    },
+                  ),
+                ]),
+              ),
+            )),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : RÉCOMPENSES
+// ══════════════════════════════════════════════════════════════
+
+class _RewardsSettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _RewardsSettingsScreen({required this.onRefresh});
+  @override
+  State<_RewardsSettingsScreen> createState() => _RewardsSettingsScreenState();
+}
+
+class _RewardsSettingsScreenState extends State<_RewardsSettingsScreen> {
+  Future<void> _showRewardDialog({RewardItem? existing}) async {
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final costCtrl  = TextEditingController(
+        text: existing?.costSeeds.toString() ?? '20');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(existing == null ? 'Ajouter une récompense' : 'Modifier la récompense'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: titleCtrl,
+            autofocus: existing == null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Nom de la récompense', isDense: true),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: costCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                labelText: 'Coût en graines', isDense: true),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final title = titleCtrl.text.trim();
+              final cost  = int.tryParse(costCtrl.text) ?? 0;
+              if (title.isEmpty || cost <= 0) return;
+              setState(() {
+                if (existing == null) {
+                  AppData.rewards.add(
+                      RewardItem(id: AppData.uid(), title: title, costSeeds: cost));
+                } else {
+                  existing.title = title;
+                  existing.costSeeds = cost;
+                }
+              });
+              await AppData.save();
+              widget.onRefresh();
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Récompenses'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          ElevatedButton.icon(
+            onPressed: () async {
+              await _showRewardDialog();
+              setState(() {});
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Ajouter une récompense'),
+          ),
+          const SizedBox(height: 8),
+          if (AppData.rewards.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Aucune récompense définie.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+            )
+          else
+            ...AppData.rewards.map((r) => Card(
+              child: ListTile(
+                leading: const Text('🎁', style: TextStyle(fontSize: 24)),
+                title: Text(r.title),
+                subtitle: Text('${r.costSeeds} graines'),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                    tooltip: 'Modifier',
+                    onPressed: () async {
+                      await _showRewardDialog(existing: r);
+                      setState(() {});
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Supprimer',
+                    onPressed: () async {
+                      setState(() => AppData.rewards.remove(r));
+                      await AppData.save();
+                      widget.onRefresh();
+                    },
+                  ),
+                ]),
+              ),
+            )),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : CODE PIN
+// ══════════════════════════════════════════════════════════════
+
+class _PinSettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _PinSettingsScreen({required this.onRefresh});
+  @override
+  State<_PinSettingsScreen> createState() => _PinSettingsScreenState();
+}
+
+class _PinSettingsScreenState extends State<_PinSettingsScreen> {
   Future<void> _showPinDialog() async {
     final ctrl1 = TextEditingController();
     final ctrl2 = TextEditingController();
@@ -1254,11 +1721,13 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
               child: Text('Code actuel défini. Entre un nouveau code pour le changer.',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
             ),
-          TextField(controller: ctrl1, obscureText: true,
+          TextField(
+              controller: ctrl1, obscureText: true,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Nouveau code (4 chiffres min)')),
           const SizedBox(height: 8),
-          TextField(controller: ctrl2, obscureText: true,
+          TextField(
+              controller: ctrl2, obscureText: true,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Confirmer le code')),
         ]),
@@ -1297,13 +1766,187 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Code PIN'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.lock_outline, color: AppPalette.green),
+              title: Text(AppData.parentPin.isEmpty ? 'Aucun code défini' : '● ● ● ●'),
+              subtitle: Text(AppData.parentPin.isEmpty
+                  ? 'L\'accès parent est libre' : 'L\'accès parent est protégé'),
+              trailing: ElevatedButton(
+                onPressed: () async {
+                  await _showPinDialog();
+                  setState(() {});
+                },
+                child: Text(AppData.parentPin.isEmpty ? 'Définir' : 'Modifier'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'Le code PIN protège l\'accès au mode Parent. '
+              'Les enfants ne pourront pas modifier les réglages sans le code.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : VALEUR DES GRAINES
+// ══════════════════════════════════════════════════════════════
+
+class _MoneySettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _MoneySettingsScreen({required this.onRefresh});
+  @override
+  State<_MoneySettingsScreen> createState() => _MoneySettingsScreenState();
+}
+
+class _MoneySettingsScreenState extends State<_MoneySettingsScreen> {
+  late final TextEditingController _rateCtrl;
+  late final TextEditingController _symbolCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _rateCtrl   = TextEditingController(text: AppData.moneyPerSeed.toString());
+    _symbolCtrl = TextEditingController(text: AppData.currencySymbol);
+  }
+
+  @override
+  void dispose() {
+    _rateCtrl.dispose();
+    _symbolCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveRate() async {
+    final rate   = double.tryParse(_rateCtrl.text.trim().replaceAll(',', '.'));
+    final symbol = _symbolCtrl.text.trim();
+    if (rate == null || rate <= 0 || symbol.isEmpty) return;
+    setState(() {
+      AppData.moneyPerSeed   = rate;
+      AppData.currencySymbol = symbol;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    await AppData.save();
+    widget.onRefresh();
+    if (mounted) messenger.showSnackBar(const SnackBar(content: Text('Taux enregistré ✅')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Valeur des graines'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SwitchListTile(
+            title: const Text('Afficher la valeur en argent'),
+            subtitle: Text(AppData.moneyEnabled
+                ? 'Affiché sur le profil de chaque enfant'
+                : 'Les enfants voient seulement les graines'),
+            value: AppData.moneyEnabled,
+            onChanged: (v) async {
+              setState(() => AppData.moneyEnabled = v);
+              await AppData.save();
+              widget.onRefresh();
+            },
+          ),
+          if (AppData.moneyEnabled) ...[
+            const Divider(height: 24),
+            const Text('Taux de conversion',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Text('1 graine = ', style: TextStyle(fontSize: 15)),
+                ),
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: _rateCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Montant',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 60,
+                  child: TextField(
+                    controller: _symbolCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Devise',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _saveRate,
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(
+                'Exemple : 1 graine = 0.10 € signifie que 50 graines valent 5 €.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUS-ÉCRAN : COMPTE
+// ══════════════════════════════════════════════════════════════
+
+class _AccountSettingsScreen extends StatefulWidget {
+  final VoidCallback onRefresh;
+  const _AccountSettingsScreen({required this.onRefresh});
+  @override
+  State<_AccountSettingsScreen> createState() => _AccountSettingsScreenState();
+}
+
+class _AccountSettingsScreenState extends State<_AccountSettingsScreen> {
   Future<void> _signOut() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Se déconnecter ?'),
         content: const Text(
-            'Tes données restent sauvegardées dans le cloud.\nTu pourras te reconnecter à tout moment.'),
+            'Tes données restent sauvegardées dans le cloud.\n'
+            'Tu pourras te reconnecter à tout moment.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
           ElevatedButton(
@@ -1325,192 +1968,46 @@ class _ParentSettingsScreenState extends State<ParentSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // ── Compte ────────────────────────────────────────
-        _header('👤 Compte'),
-        ListTile(
-          leading: const Icon(Icons.account_circle, size: 36, color: AppPalette.green),
-          title: Text(user?.displayName ?? user?.email ?? 'Connecté'),
-          subtitle: Text(user?.email ?? ''),
-          trailing: TextButton.icon(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Compte'),
+        backgroundColor: AppPalette.softGreen,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.account_circle, size: 40, color: AppPalette.green),
+              title: Text(user?.displayName ?? user?.email ?? 'Connecté',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(user?.email ?? ''),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
             onPressed: _signOut,
-            icon: const Icon(Icons.logout, size: 18),
-            label: const Text('Déconnecter'),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            icon: const Icon(Icons.logout),
+            label: const Text('Se déconnecter'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
           ),
-        ),
-        const Divider(height: 32),
-
-        // ── Valeur monétaire ──────────────────────────────
-        _header('💰 Valeur des graines en argent'),
-        SwitchListTile(
-          title: const Text('Afficher la valeur en argent'),
-          subtitle: Text(AppData.moneyEnabled
-              ? 'Affiché sur le profil de chaque enfant'
-              : 'Les enfants voient seulement les graines'),
-          value: AppData.moneyEnabled,
-          onChanged: (v) async {
-            setState(() => AppData.moneyEnabled = v);
-            await AppData.save();
-          },
-        ),
-        if (AppData.moneyEnabled)
+          const SizedBox(height: 16),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Row(children: [
-              const Text('1 graine = ', style: TextStyle(fontSize: 15)),
-              SizedBox(width: 80, child: TextField(
-                controller: _moneyRateCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(isDense: true, hintText: '0.10'),
-              )),
-              const SizedBox(width: 8),
-              SizedBox(width: 56, child: TextField(
-                controller: _currencyCtrl,
-                decoration: const InputDecoration(labelText: 'Devise', isDense: true, hintText: '€'),
-              )),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: () async {
-                  final rate = double.tryParse(
-                      _moneyRateCtrl.text.trim().replaceAll(',', '.'));
-                  final symbol = _currencyCtrl.text.trim();
-                  if (rate == null || rate <= 0 || symbol.isEmpty) return;
-                  setState(() {
-                    AppData.moneyPerSeed   = rate;
-                    AppData.currencySymbol = symbol;
-                  });
-                  final messenger = ScaffoldMessenger.of(context);
-                  await AppData.save();
-                  if (mounted) {
-                    messenger.showSnackBar(
-                        const SnackBar(content: Text('Taux enregistré ✅')));
-                  }
-                },
-                child: const Text('OK'),
-              ),
-            ]),
-          ),
-        const Divider(height: 32),
-
-        // ── PIN ───────────────────────────────────────────
-        _header('🔒 Code PIN parent'),
-        ListTile(
-          title: Text(AppData.parentPin.isEmpty ? 'Aucun code défini' : '● ● ● ●'),
-          subtitle: Text(AppData.parentPin.isEmpty
-              ? 'Accès parent libre' : 'Accès parent protégé'),
-          trailing: ElevatedButton(
-            onPressed: _showPinDialog,
-            child: Text(AppData.parentPin.isEmpty ? 'Définir' : 'Modifier'),
-          ),
-        ),
-        const Divider(height: 32),
-
-        // ── Enfants ───────────────────────────────────────
-        _header('👨‍👩‍👧 Enfants'),
-        const SizedBox(height: 4),
-        ElevatedButton.icon(
-          onPressed: () => _showChildDialog(),
-          icon: const Icon(Icons.person_add),
-          label: const Text('Ajouter un enfant'),
-        ),
-        const SizedBox(height: 8),
-        ...AppData.children.map((c) => ListTile(
-          leading: Text(c.animal, style: const TextStyle(fontSize: 26)),
-          title: Text(c.name),
-          subtitle: Text('${c.seedsBalance} graines · ${c.lifetimeSeeds} au total'),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Colors.blue),
-              tooltip: 'Modifier',
-              onPressed: () async {
-                await _showChildDialog(existing: c);
-                setState(() {});
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              tooltip: 'Supprimer',
-              onPressed: () async {
-                setState(() => AppData.children.remove(c));
-                await AppData.save(); widget.onRefresh();
-              },
-            ),
-          ]),
-        )),
-        const Divider(height: 32),
-
-        // ── Tâches ────────────────────────────────────────
-        _header('✅ Tâches'),
-        Row(children: [
-          GestureDetector(
-            onTap: _showIconPicker,
-            child: Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(
-                  color: AppPalette.softGreen, borderRadius: BorderRadius.circular(12)),
-              child: Center(child: Text(_icon, style: const TextStyle(fontSize: 26))),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'Tes données sont sauvegardées dans le cloud et resteront disponibles '
+              'lors de ta prochaine connexion.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(child: TextField(controller: _taskCtrl,
-              decoration: const InputDecoration(labelText: 'Nom de la tâche'))),
-          const SizedBox(width: 8),
-          SizedBox(width: 70, child: TextField(controller: _taskPtsCtrl,
-              decoration: const InputDecoration(labelText: 'Graines'),
-              keyboardType: TextInputType.number)),
-          const SizedBox(width: 8),
-          ElevatedButton(onPressed: _addTask, child: const Text('+')),
-        ]),
-        const SizedBox(height: 8),
-        ...AppData.taskTemplates.map((t) => ListTile(
-          leading: Text(t.icon, style: const TextStyle(fontSize: 22)),
-          title: Text(t.title),
-          subtitle: Text('${t.rewardSeeds} graines'),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () async {
-              setState(() => AppData.taskTemplates.remove(t));
-              await AppData.save();
-            },
-          ),
-        )),
-        const Divider(height: 32),
-
-        // ── Récompenses ───────────────────────────────────
-        _header('🎁 Récompenses'),
-        Row(children: [
-          Expanded(child: TextField(controller: _rewardCtrl,
-              decoration: const InputDecoration(labelText: 'Nom de la récompense'))),
-          const SizedBox(width: 8),
-          SizedBox(width: 80, child: TextField(controller: _rewardCostCtrl,
-              decoration: const InputDecoration(labelText: 'Coût'),
-              keyboardType: TextInputType.number)),
-          const SizedBox(width: 8),
-          ElevatedButton(onPressed: _addReward, child: const Text('+')),
-        ]),
-        const SizedBox(height: 8),
-        ...AppData.rewards.map((r) => ListTile(
-          title: Text(r.title),
-          subtitle: Text('${r.costSeeds} graines'),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () async {
-              setState(() => AppData.rewards.remove(r));
-              await AppData.save();
-            },
-          ),
-        )),
-      ],
+        ],
+      ),
     );
   }
-
-  Widget _header(String t) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Text(t, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-  );
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1552,8 +2049,88 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   void dispose() { _bounce.dispose(); _sparkle.dispose(); super.dispose(); }
 
   Future<void> _markPending(ScheduledTask task) async {
-    setState(() => task.pendingValidation = true);
+    String? photo;
+    if (AppData.photoProofEnabled) {
+      // null = cancelled (don't mark), '' = no photo, 'data:...' = photo
+      final result = await _showPhotoProofDialog();
+      if (result == null) return;
+      photo = result.isEmpty ? null : result;
+    }
+    setState(() {
+      task.pendingValidation = true;
+      task.photoBase64 = photo;
+    });
     await AppData.save();
+  }
+
+  // Returns null = cancelled, '' = no photo, 'data:...' = with photo
+  Future<String?> _showPhotoProofDialog() async {
+    String? capturedPhoto;
+    bool cancelled = true;
+    bool confirmed = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('📸 Preuve en photo'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text(
+                'Tu peux ajouter une photo pour montrer que tu as fini !',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              if (capturedPhoto != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    base64Decode(capturedPhoto!.split(',').last),
+                    height: 140,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final p = await pickImageAsBase64();
+                    if (p != null) setS(() => capturedPhoto = p);
+                  },
+                  icon: const Icon(Icons.camera_alt),
+                  label: Text(capturedPhoto == null
+                      ? '📷 Choisir une photo'
+                      : '🔄 Changer la photo'),
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () { cancelled = true; Navigator.pop(ctx); },
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () { cancelled = false; confirmed = false; Navigator.pop(ctx); },
+              child: const Text('Sans photo'),
+            ),
+            if (capturedPhoto != null)
+              ElevatedButton(
+                onPressed: () { cancelled = false; confirmed = true; Navigator.pop(ctx); },
+                child: const Text('Envoyer ✅'),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (cancelled) return null;
+    if (confirmed && capturedPhoto != null) return capturedPhoto;
+    return ''; // no photo but proceed
   }
 
   List<ScheduledTask> _tasksForDay(String childId, DateTime day) =>
@@ -1842,24 +2419,31 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     final now     = DateTime.now();
     final isPast  = !t.date.isAfter(DateTime(now.year, now.month, now.day));
     final canMark = !t.done && !t.pendingValidation && isPast;
+    final isPenalty = t.rewardSeeds < 0;
 
     final borderColor = t.done
         ? AppPalette.kawaiiMint
         : t.pendingValidation
             ? Colors.orange.shade300
-            : scheme.accent.withValues(alpha: 0.4);
+            : isPenalty
+                ? Colors.red.shade200
+                : scheme.accent.withValues(alpha: 0.4);
+
+    final seedLabel = isPenalty
+        ? '${t.rewardSeeds} graines ⚠️ · ${t.date.day}/${t.date.month}'
+        : '${t.rewardSeeds} graines 🌱 · ${t.date.day}/${t.date.month}';
 
     final statusText = t.done
-        ? 'Validée ✅'
+        ? (isPenalty ? 'Pénalité appliquée ⚠️' : 'Validée ✅')
         : t.pendingValidation
             ? 'En attente de validation... ⏳'
-            : '${t.rewardSeeds} graines 🌱 · ${t.date.day}/${t.date.month}';
+            : seedLabel;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isPenalty && !t.done ? Colors.red.shade50 : Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: borderColor, width: 2),
       ),
@@ -1870,12 +2454,19 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
           Text(t.title, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.bold,
             decoration: t.done ? TextDecoration.lineThrough : null,
-            color: t.done ? Colors.grey.shade400 : Colors.black87,
+            color: t.done
+                ? Colors.grey.shade400
+                : isPenalty
+                    ? Colors.red.shade700
+                    : Colors.black87,
           )),
           Text(statusText, style: TextStyle(
             fontSize: 12,
             color: t.pendingValidation && !t.done
-                ? Colors.orange.shade700 : Colors.grey.shade500,
+                ? Colors.orange.shade700
+                : isPenalty && !t.done
+                    ? Colors.red.shade600
+                    : Colors.grey.shade500,
           )),
         ])),
         if (canMark)
@@ -1884,9 +2475,12 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                  color: scheme.accent, borderRadius: BorderRadius.circular(20)),
-              child: const Text('J\'ai fini ! 🙋',
-                  style: TextStyle(color: Colors.white, fontSize: 12)),
+                  color: isPenalty ? Colors.red.shade400 : scheme.accent,
+                  borderRadius: BorderRadius.circular(20)),
+              child: Text(
+                isPenalty ? 'Compris 👍' : 'J\'ai fini ! 🙋',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
             ),
           ),
       ]),
