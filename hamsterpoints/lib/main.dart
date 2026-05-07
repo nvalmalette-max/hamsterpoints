@@ -452,6 +452,122 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // ══════════════════════════════════════════════════════════════
+// CUSTOM PIN KEYPAD (no OS keyboard — works on iOS PWA)
+// ══════════════════════════════════════════════════════════════
+
+class _PinDialog extends StatefulWidget {
+  final void Function(bool ok) onResult;
+  const _PinDialog({required this.onResult});
+  @override
+  State<_PinDialog> createState() => _PinDialogState();
+}
+
+class _PinDialogState extends State<_PinDialog> {
+  String _entered = '';
+
+  void _press(String digit) {
+    if (_entered.length >= 8) return;
+    setState(() => _entered += digit);
+  }
+
+  void _delete() {
+    if (_entered.isEmpty) return;
+    setState(() => _entered = _entered.substring(0, _entered.length - 1));
+  }
+
+  void _confirm() => widget.onResult(_entered == AppData.parentPin);
+
+  Widget _key(String label, {VoidCallback? onTap, Color? color, IconData? icon}) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Material(
+          color: color ?? Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: SizedBox(
+              height: 56,
+              child: Center(
+                child: icon != null
+                    ? Icon(icon, size: 24, color: Colors.grey.shade700)
+                    : Text(label,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dots = List.generate(
+      _entered.length,
+      (_) => const Text('●', style: TextStyle(fontSize: 20, letterSpacing: 4)),
+    );
+
+    return AlertDialog(
+      title: const Text('🔒 Code parent', textAlign: TextAlign.center),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: _entered.isEmpty
+                ? Text('Entrez votre code',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 15))
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: dots,
+                  ),
+          ),
+          const SizedBox(height: 16),
+          Row(children: [
+            _key('1', onTap: () => _press('1')),
+            _key('2', onTap: () => _press('2')),
+            _key('3', onTap: () => _press('3')),
+          ]),
+          Row(children: [
+            _key('4', onTap: () => _press('4')),
+            _key('5', onTap: () => _press('5')),
+            _key('6', onTap: () => _press('6')),
+          ]),
+          Row(children: [
+            _key('7', onTap: () => _press('7')),
+            _key('8', onTap: () => _press('8')),
+            _key('9', onTap: () => _press('9')),
+          ]),
+          Row(children: [
+            _key('', icon: Icons.backspace_outlined, onTap: _delete,
+                color: Colors.red.shade50),
+            _key('0', onTap: () => _press('0')),
+            _key('', icon: Icons.check_circle_outline, onTap: _confirm,
+                color: Colors.green.shade50),
+          ]),
+          const SizedBox(height: 8),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => widget.onResult(false),
+          child: const Text('Annuler'),
+        ),
+      ],
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // GATE SCREEN
 // ══════════════════════════════════════════════════════════════
 
@@ -466,50 +582,14 @@ class _AppGateScreenState extends State<AppGateScreen> {
 
   Future<bool> _checkPin(BuildContext context) async {
     if (AppData.parentPin.isEmpty) return true;
-    final ctrl = TextEditingController();
-    final focusNode = FocusNode();
     bool? result;
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('🔒 Code parent'),
-        content: TextField(
-          controller: ctrl,
-          focusNode: focusNode,
-          obscureText: true,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'Code PIN',
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-              tooltip: 'Valider',
-              onPressed: () {
-                result = ctrl.text == AppData.parentPin;
-                Navigator.pop(ctx);
-              },
-            ),
-          ),
-          onSubmitted: (_) {
-            result = ctrl.text == AppData.parentPin;
-            Navigator.pop(ctx);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () { result = false; Navigator.pop(ctx); },
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () { result = ctrl.text == AppData.parentPin; Navigator.pop(ctx); },
-            child: const Text('Entrer'),
-          ),
-        ],
+      builder: (ctx) => _PinDialog(
+        onResult: (ok) { result = ok; Navigator.pop(ctx); },
       ),
     );
-    focusNode.dispose();
     if (result != true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Code incorrect.')));
