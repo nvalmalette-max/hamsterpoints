@@ -4,10 +4,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'firebase_options.dart';
 
 // ══════════════════════════════════════════════════════════════
@@ -184,15 +186,77 @@ class AppData {
   static bool   photoProofEnabled    = false;
   static bool   childCalendarEnabled = true;
 
+  // ── Code famille ─────────────────────────────────────────
+  static String familyCode = '';
+  static const _codeStorageKey = 'hp_family_code';
+
+  static String? getStoredCode() => html.window.localStorage[_codeStorageKey];
+  static void    storeCode(String code) => html.window.localStorage[_codeStorageKey] = code;
+  static void    clearStoredCode() => html.window.localStorage.remove(_codeStorageKey);
+
+  static String generateCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rnd = Random.secure();
+    return List.generate(8, (_) => chars[rnd.nextInt(chars.length)]).join();
+  }
+
+  static String? getCodeFromUrl() {
+    final href = html.window.location.href;
+    return Uri.parse(href).queryParameters['code'];
+  }
+
+  // Called when parent logs in with Google
+  static Future<void> initAsParent() async {
+    final user = FirebaseAuth.instance.currentUser!;
+    final codeRef = FirebaseDatabase.instance.ref('parentFamilyCodes/${user.uid}');
+    final snap = await codeRef.get();
+    if (snap.exists && snap.value != null) {
+      familyCode = snap.value as String;
+    } else {
+      familyCode = generateCode();
+      // Migrate old data from users/${uid} if it exists
+      final oldSnap = await FirebaseDatabase.instance.ref('users/${user.uid}').get();
+      if (oldSnap.exists && oldSnap.value != null) {
+        await FirebaseDatabase.instance.ref('families/$familyCode').set(oldSnap.value);
+      }
+      await codeRef.set(familyCode);
+    }
+    storeCode(familyCode);
+    await load();
+  }
+
+  // Called when joining with a family code (child device)
+  static Future<bool> initWithCode(String code) async {
+    final snap = await FirebaseDatabase.instance.ref('families/$code').get();
+    if (!snap.exists) return false;
+    if (FirebaseAuth.instance.currentUser == null) {
+      await FirebaseAuth.instance.signInAnonymously();
+    }
+    familyCode = code.trim().toUpperCase();
+    storeCode(familyCode);
+    await load();
+    return true;
+  }
+
+  // Called on startup if localStorage has a code
+  static Future<bool> initFromStorage() async {
+    final code = getStoredCode();
+    if (code == null || code.isEmpty) return false;
+    if (FirebaseAuth.instance.currentUser == null) {
+      await FirebaseAuth.instance.signInAnonymously();
+    }
+    familyCode = code;
+    await load();
+    return true;
+  }
+
   static String uid() => DateTime.now().microsecondsSinceEpoch.toString();
 
   static int get pendingCount =>
       scheduledTasks.where((t) => t.pendingValidation && !t.done).length;
 
-  static DatabaseReference get _ref {
-    final user = FirebaseAuth.instance.currentUser!;
-    return FirebaseDatabase.instance.ref('users/${user.uid}');
-  }
+  static DatabaseReference get _ref =>
+      FirebaseDatabase.instance.ref('families/$familyCode');
 
   static List<DateTime> generateDates(
       DateTime start, DateTime? end, RecurrenceType type) {
@@ -218,7 +282,7 @@ class AppData {
   }
 
   static Future<void> save() async {
-    if (FirebaseAuth.instance.currentUser == null) return;
+    if (familyCode.isEmpty) return;
     await _ref.set({
       'children':             children.map((e) => e.toJson()).toList(),
       'rewards':              rewards.map((e) => e.toJson()).toList(),
@@ -234,7 +298,7 @@ class AppData {
   }
 
   static Future<void> load() async {
-    if (FirebaseAuth.instance.currentUser == null) return;
+    if (familyCode.isEmpty) return;
     final snapshot = await _ref.get();
     if (!snapshot.exists || snapshot.value == null) return;
     final data = Map<String, dynamic>.from(snapshot.value as Map);
@@ -260,6 +324,8 @@ class AppData {
     scheduledTasks = []; parentPin = '';
     moneyEnabled = false; moneyPerSeed = 0.10; currencySymbol = '€';
     photoProofEnabled = false; childCalendarEnabled = true;
+    familyCode = '';
+    clearStoredCode();
   }
 }
 
@@ -323,96 +389,86 @@ class HamsterPointsApp extends StatelessWidget {
         scaffoldBackgroundColor: AppPalette.parentBg,
         colorScheme: ColorScheme.fromSeed(seedColor: AppPalette.green),
       ),
-      home: const AuthGateScreen(),
+      home: const _StartupScreen(),
     );
   }
 }
 
 // ══════════════════════════════════════════════════════════════
-// AUTH GATE
+// STARTUP — détecte code stocké / URL et route vers le bon écran
 // ══════════════════════════════════════════════════════════════
 
-class AuthGateScreen extends StatelessWidget {
-  const AuthGateScreen({super.key});
+class _StartupScreen extends StatefulWidget {
+  const _StartupScreen();
   @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        if (snapshot.hasData) return const _AppLoader();
-        return const LoginScreen();
-      },
-    );
-  }
+  State<_StartupScreen> createState() => _StartupScreenState();
 }
 
-class _AppLoader extends StatefulWidget {
-  const _AppLoader();
-  @override
-  State<_AppLoader> createState() => _AppLoaderState();
-}
-
-class _AppLoaderState extends State<_AppLoader> {
-  bool _loaded = false;
-  String? _error;
-
+class _StartupScreenState extends State<_StartupScreen> {
   @override
   void initState() {
     super.initState();
-    AppData.load().then((_) {
-      if (mounted) setState(() => _loaded = true);
-    }).catchError((e) {
-      if (mounted) setState(() => _error = e.toString());
-    });
+    _init();
+  }
+
+  Future<void> _init() async {
+    // 1. Code dans l'URL (?code=XXXX) — partage par QR
+    final urlCode = AppData.getCodeFromUrl();
+    if (urlCode != null && urlCode.isNotEmpty) {
+      final ok = await AppData.initWithCode(urlCode);
+      if (ok && mounted) {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const AppGateScreen()));
+        return;
+      }
+    }
+    // 2. Code en localStorage (visite précédente)
+    final ok = await AppData.initFromStorage();
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pushReplacement(context,
+          MaterialPageRoute(builder: (_) => const AppGateScreen()));
+    } else {
+      Navigator.pushReplacement(context,
+          MaterialPageRoute(builder: (_) => const WelcomeScreen()));
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (_error != null) {
-      return Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('Erreur de chargement', style: TextStyle(fontSize: 18)),
-        const SizedBox(height: 12),
-        ElevatedButton(
-          onPressed: () {
-            setState(() { _error = null; _loaded = false; });
-            AppData.load().then((_) { if (mounted) setState(() => _loaded = true); });
-          },
-          child: const Text('Réessayer'),
-        ),
+  Widget build(BuildContext context) => const Scaffold(
+      body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('🐹', style: TextStyle(fontSize: 60)),
+        SizedBox(height: 16),
+        CircularProgressIndicator(),
       ])));
-    }
-    if (!_loaded) {
-      return const Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        CircularProgressIndicator(), SizedBox(height: 16), Text('Chargement...'),
-      ])));
-    }
-    return const AppGateScreen();
-  }
 }
 
 // ══════════════════════════════════════════════════════════════
-// LOGIN SCREEN
+// WELCOME SCREEN — première ouverture (pas de code stocké)
 // ══════════════════════════════════════════════════════════════
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class WelcomeScreen extends StatefulWidget {
+  const WelcomeScreen({super.key});
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _WelcomeScreenState extends State<WelcomeScreen> {
   bool _loading = false;
 
-  Future<void> _signInWithGoogle() async {
+  Future<void> _parentLogin() async {
     setState(() => _loading = true);
     try {
       await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      await AppData.initAsParent();
+      if (mounted) {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const AppGateScreen()));
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e')));
         setState(() => _loading = false);
       }
     }
@@ -423,30 +479,125 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: AppPalette.parentBg,
       body: Center(child: Padding(
-        padding: const EdgeInsets.all(40),
+        padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Text('🐹', style: TextStyle(fontSize: 80)),
           const SizedBox(height: 16),
-          const Text('HamsterPoints', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+          const Text('HamsterPoints',
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text('Connecte-toi pour accéder à tes données\net les synchroniser entre tes appareils.',
+          Text('Gérez les tâches et récompenses de votre famille !',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: Colors.grey.shade600)),
           const SizedBox(height: 48),
-          if (_loading) const CircularProgressIndicator()
-          else ElevatedButton.icon(
-            onPressed: _signInWithGoogle,
-            icon: const Text('G', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                                                    color: Color(0xFF4285F4))),
-            label: const Text('Continuer avec Google', style: TextStyle(fontSize: 16)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white, foregroundColor: Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-              side: BorderSide(color: Colors.grey.shade300), elevation: 2,
+          if (_loading)
+            const CircularProgressIndicator()
+          else ...[
+            SizedBox(width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _parentLogin,
+                icon: const Text('G', style: TextStyle(fontSize: 18,
+                    fontWeight: FontWeight.bold, color: Color(0xFF4285F4))),
+                label: const Text('Parent — Continuer avec Google',
+                    style: TextStyle(fontSize: 15)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white, foregroundColor: Colors.black87,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  side: BorderSide(color: Colors.grey.shade300), elevation: 2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const _JoinFamilyScreen())),
+                icon: const Icon(Icons.group_add_outlined),
+                label: const Text('Rejoindre une famille',
+                    style: TextStyle(fontSize: 15)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      )),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// JOIN FAMILY SCREEN — enfant entre le code famille
+// ══════════════════════════════════════════════════════════════
+
+class _JoinFamilyScreen extends StatefulWidget {
+  const _JoinFamilyScreen();
+  @override
+  State<_JoinFamilyScreen> createState() => _JoinFamilyScreenState();
+}
+
+class _JoinFamilyScreenState extends State<_JoinFamilyScreen> {
+  final _ctrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _join() async {
+    final code = _ctrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() { _loading = true; _error = null; });
+    final ok = await AppData.initWithCode(code);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.pushAndRemoveUntil(context,
+          MaterialPageRoute(builder: (_) => const AppGateScreen()),
+          (_) => false);
+    } else {
+      setState(() { _loading = false; _error = 'Code introuvable. Vérifie avec tes parents.'; });
+    }
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppPalette.parentBg,
+      appBar: AppBar(title: const Text('Rejoindre une famille'),
+          backgroundColor: AppPalette.softGreen),
+      body: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Text('🐹', style: TextStyle(fontSize: 60)),
+          const SizedBox(height: 24),
+          const Text('Entre le code famille\ndonné par tes parents',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 32),
+          TextField(
+            controller: _ctrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'Code famille (ex: ABCD1234)',
+              border: const OutlineInputBorder(),
+              errorText: _error,
+            ),
+            onSubmitted: (_) => _join(),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _join,
+              style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16)),
+              child: _loading
+                  ? const CircularProgressIndicator()
+                  : const Text('Rejoindre', style: TextStyle(fontSize: 16)),
             ),
           ),
         ]),
-      )),
+      ),
     );
   }
 }
@@ -1786,27 +1937,83 @@ class _AccountSettingsScreenState extends State<_AccountSettingsScreen> {
     final navigator = Navigator.of(context);
     AppData.clear();
     await FirebaseAuth.instance.signOut();
+    navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const WelcomeScreen()), (_) => false);
     navigator.popUntil((route) => route.isFirst);
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final code = AppData.familyCode;
+    final qrUrl = 'https://nvalmalette-max.github.io/Hamsterpoints/?code=$code';
+
     return Scaffold(
       appBar: AppBar(title: const Text('Compte'), backgroundColor: AppPalette.softGreen),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        Card(child: ListTile(
-          leading: const Icon(Icons.account_circle, size: 40, color: AppPalette.green),
-          title: Text(user?.displayName ?? user?.email ?? 'Connecté',
-              style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text(user?.email ?? ''),
+        if (user != null && user.email != null)
+          Card(child: ListTile(
+            leading: const Icon(Icons.account_circle, size: 40, color: AppPalette.green),
+            title: Text(user.displayName ?? user.email!,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(user.email!),
+          )),
+        const SizedBox(height: 24),
+
+        // ── Code famille ──────────────────────────────────
+        Card(child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Code famille', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('Partagez ce code ou ce QR avec les appareils de vos enfants.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+            const SizedBox(height: 16),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppPalette.softGreen,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(code,
+                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold,
+                        letterSpacing: 4, color: AppPalette.brown)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: QrImageView(
+                data: qrUrl,
+                version: QrVersions.auto,
+                size: 200,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: code));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Code copié !')));
+                },
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copier le code'),
+              ),
+            ),
+          ]),
         )),
         const SizedBox(height: 24),
-        ElevatedButton.icon(
-          onPressed: _signOut,
-          icon: const Icon(Icons.logout), label: const Text('Se déconnecter'),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-        ),
+
+        if (user != null)
+          ElevatedButton.icon(
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout),
+            label: const Text('Se déconnecter'),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+          ),
       ]),
     );
   }
