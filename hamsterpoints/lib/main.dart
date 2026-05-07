@@ -805,6 +805,29 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     }
   }
 
+  Future<void> _refuse(ScheduledTask task) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Refuser la tâche ?'),
+        content: Text('Refuser "${task.title}" de ${task.childName} ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Refuser'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    setState(() => AppData.scheduledTasks.remove(task));
+    await AppData.save();
+    widget.onRefresh();
+  }
+
   Future<void> _validate(ScheduledTask task) async {
     final idx = AppData.children.indexWhere((c) => c.id == task.childId);
     if (idx == -1) return;
@@ -1003,6 +1026,16 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
             Text('${t.childName} · ${t.date.day}/${t.date.month}',
                 style: const TextStyle(fontSize: 11)),
           ])),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+            ),
+            onPressed: () => _refuse(t),
+            child: const Text('Refuser', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 4),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green, foregroundColor: Colors.white,
@@ -1046,12 +1079,14 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         trailing: t.done
             ? Text('${t.rewardSeeds} 🌱',
                 style: TextStyle(fontSize: 12, color: t.rewardSeeds < 0 ? Colors.red : null))
-            : Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
-                    onPressed: () => _validate(t), tooltip: 'Valider'),
-                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                    onPressed: () => _delete(t), tooltip: 'Supprimer'),
-              ]),
+            : t.pendingValidation
+                ? const Icon(Icons.hourglass_empty, color: Colors.orange, size: 20)
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                        onPressed: () => _validate(t), tooltip: 'Valider'),
+                    IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                        onPressed: () => _delete(t), tooltip: 'Supprimer'),
+                  ]),
       ),
     );
   }
@@ -1864,8 +1899,8 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     String? photo;
     if (AppData.photoProofEnabled && !isPenalty) {
       final result = await _showPhotoProofDialog();
-      if (result == null) return;
-      photo = result.isEmpty ? null : result;
+      // null = cancelled dialog entirely → treat as no photo but continue
+      photo = (result == null || result.isEmpty) ? null : result;
     }
 
     final today = DateTime.now();
@@ -1889,8 +1924,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     String? photo;
     if (AppData.photoProofEnabled) {
       final result = await _showPhotoProofDialog();
-      if (result == null) return;
-      photo = result.isEmpty ? null : result;
+      photo = (result == null || result.isEmpty) ? null : result;
     }
     setState(() { task.pendingValidation = true; task.photoBase64 = photo; });
     await AppData.save();
@@ -2000,12 +2034,12 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
         _hamsterZone(child),
         const SizedBox(height: 28),
         _seedsBadge(child),
+        const SizedBox(height: 28),
+        _taskList(tasks, child),
         if (AppData.taskTemplates.isNotEmpty) ...[
           const SizedBox(height: 28),
           _declareSection(child),
         ],
-        const SizedBox(height: 28),
-        _taskList(tasks, child),
         const SizedBox(height: 40),
       ],
     );
@@ -2279,7 +2313,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     // Only show scheduled/pending tasks (not instantly declared ones still pending)
     if (tasks.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Mes tâches 📋', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      const Text('Tâches planifiées 📋', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
       const SizedBox(height: 12),
       ...tasks.take(20).map((t) => _kawaiiTaskTile(t, child)),
     ]);
