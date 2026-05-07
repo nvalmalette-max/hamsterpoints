@@ -764,8 +764,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         return match && (childId == null || t.childId == childId);
       }).toList();
 
-  List<ScheduledTask> get _pending =>
-      AppData.scheduledTasks.where((t) => t.pendingValidation && !t.done).toList();
 
   String _recLabel(RecurrenceType t) => switch (t) {
     RecurrenceType.none         => 'Une seule fois',
@@ -851,7 +849,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final dayTasks = _tasksForDay(_selectedDay, childId: _filterChildId);
-    final pending  = _pending;
     final hasData  = AppData.children.isNotEmpty && AppData.taskTemplates.isNotEmpty;
 
     return ListView(
@@ -912,21 +909,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
           ),
         )),
         const SizedBox(height: 10),
-        if (pending.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade50, borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.orange.shade300),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('⚠️ ${pending.length} tâche${pending.length > 1 ? "s" : ""} à valider',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
-              const SizedBox(height: 6),
-              ...pending.map((t) => _pendingTile(t)),
-            ]),
-          ),
         ExpansionTile(
           title: const Text('➕ Attribuer une tâche',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -1014,51 +996,6 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     ),
   );
 
-  Widget _pendingTile(ScheduledTask t) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text(t.icon.isEmpty ? '📌' : t.icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(t.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-            Text('${t.childName} · ${t.date.day}/${t.date.month}',
-                style: const TextStyle(fontSize: 11)),
-          ])),
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              minimumSize: Size.zero,
-            ),
-            onPressed: () => _refuse(t),
-            child: const Text('Refuser', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 4),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green, foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              minimumSize: Size.zero,
-            ),
-            onPressed: () => _validate(t),
-            child: const Text('Valider', style: TextStyle(fontSize: 12)),
-          ),
-        ]),
-        if (t.photoBase64 != null) ...[
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.memory(base64Decode(t.photoBase64!.split(',').last),
-                height: 100, width: double.infinity, fit: BoxFit.cover),
-          ),
-        ],
-        const Divider(height: 12),
-      ]),
-    );
-  }
-
   Widget _taskTile(ScheduledTask t) {
     final borderColor = t.done ? Colors.green.shade200
         : t.pendingValidation ? Colors.orange.shade300 : Colors.grey.shade200;
@@ -1066,28 +1003,67 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
       margin: const EdgeInsets.only(bottom: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: borderColor, width: 1.5)),
-      child: ListTile(
-        dense: true,
-        leading: Text(t.icon.isEmpty ? '📌' : t.icon, style: const TextStyle(fontSize: 20)),
-        title: Text(t.title, style: const TextStyle(fontSize: 13)),
-        subtitle: Text(
-          t.done ? '✅ Validé · ${t.childName}'
-              : t.pendingValidation ? '⏳ En attente · ${t.childName}' : t.childName,
-          style: TextStyle(fontSize: 11,
-              color: t.pendingValidation && !t.done ? Colors.orange.shade700 : null),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          dense: true,
+          leading: Text(t.icon.isEmpty ? '📌' : t.icon, style: const TextStyle(fontSize: 20)),
+          title: Text(t.title, style: const TextStyle(fontSize: 13)),
+          subtitle: Text(
+            t.done ? '✅ Validé · ${t.childName}'
+                : t.pendingValidation ? '⏳ En attente · ${t.childName}' : t.childName,
+            style: TextStyle(fontSize: 11,
+                color: t.pendingValidation && !t.done ? Colors.orange.shade700 : null),
+          ),
+          trailing: t.done
+              ? Text('${t.rewardSeeds} 🌱',
+                  style: TextStyle(fontSize: 12, color: t.rewardSeeds < 0 ? Colors.red : null))
+              : t.pendingValidation
+                  ? null
+                  : Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                          onPressed: () => _validate(t), tooltip: 'Valider'),
+                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                          onPressed: () => _delete(t), tooltip: 'Supprimer'),
+                    ]),
         ),
-        trailing: t.done
-            ? Text('${t.rewardSeeds} 🌱',
-                style: TextStyle(fontSize: 12, color: t.rewardSeeds < 0 ? Colors.red : null))
-            : t.pendingValidation
-                ? const Icon(Icons.hourglass_empty, color: Colors.orange, size: 20)
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    IconButton(icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
-                        onPressed: () => _validate(t), tooltip: 'Valider'),
-                    IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                        onPressed: () => _delete(t), tooltip: 'Supprimer'),
-                  ]),
-      ),
+        if (t.pendingValidation && !t.done) ...[
+          if (t.photoBase64 != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(
+                  base64Decode(t.photoBase64!.split(',').last),
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red)),
+                  onPressed: () => _refuse(t),
+                  child: const Text('Refuser'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green, foregroundColor: Colors.white),
+                  onPressed: () => _validate(t),
+                  child: const Text('Valider'),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 }
@@ -1920,6 +1896,28 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
 
   // ── Marquer une tâche planifiée comme faite ──────────────
 
+  Future<void> _confirmAndMark(ScheduledTask task, ChildProfile child) async {
+    final isPenalty = task.rewardSeeds < 0;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${task.icon} ${task.title}'),
+        content: Text(isPenalty
+            ? 'Pénalité de ${task.rewardSeeds} graines. Confirmes-tu ?'
+            : 'Super ! Tu as fait cette tâche ?\nTon parent validera et tu recevras ${task.rewardSeeds} graines 🌱'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isPenalty ? 'Confirmer' : 'Oui, j\'ai fait ça !'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await _markPending(task);
+  }
+
   Future<void> _markPending(ScheduledTask task) async {
     String? photo;
     if (AppData.photoProofEnabled) {
@@ -1928,6 +1926,10 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     }
     setState(() { task.pendingValidation = true; task.photoBase64 = photo; });
     await AppData.save();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Demande envoyée à tes parents ✅')));
+    }
   }
 
   // Returns: null=annulé, ''=sans photo, 'data:...'=avec photo
@@ -2322,7 +2324,9 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   Widget _kawaiiTaskTile(ScheduledTask t, ChildProfile child) {
     final scheme    = child.colorScheme;
     final now       = DateTime.now();
-    final isPast    = !t.date.isAfter(DateTime(now.year, now.month, now.day));
+    final today     = DateTime(now.year, now.month, now.day);
+    final taskDay   = DateTime(t.date.year, t.date.month, t.date.day);
+    final isPast    = !taskDay.isAfter(today);
     final canMark   = !t.done && !t.pendingValidation && isPast;
     final isPenalty = t.rewardSeeds < 0;
 
@@ -2363,7 +2367,7 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
         ])),
         if (canMark)
           GestureDetector(
-            onTap: () => _markPending(t),
+            onTap: () => _confirmAndMark(t, child),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
