@@ -479,8 +479,19 @@ class _AppGateScreenState extends State<AppGateScreen> {
           focusNode: focusNode,
           obscureText: true,
           keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Code PIN'),
+          decoration: InputDecoration(
+            labelText: 'Code PIN',
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+              tooltip: 'Valider',
+              onPressed: () {
+                result = ctrl.text == AppData.parentPin;
+                Navigator.pop(ctx);
+              },
+            ),
+          ),
           onSubmitted: (_) {
             result = ctrl.text == AppData.parentPin;
             Navigator.pop(ctx);
