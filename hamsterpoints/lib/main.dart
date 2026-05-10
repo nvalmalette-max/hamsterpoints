@@ -424,11 +424,23 @@ class _StartupScreenState extends State<_StartupScreen> {
     }
     // 2. Code en localStorage (visite précédente)
     final ok = await AppData.initFromStorage();
-    if (!mounted) return;
-    if (ok) {
+    if (ok && mounted) {
       Navigator.pushReplacement(context,
           MaterialPageRoute(builder: (_) => const AppGateScreen()));
-    } else {
+      return;
+    }
+    // 3. Retour depuis signInWithRedirect Google (main() a déjà appelé getRedirectResult)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && !user.isAnonymous) {
+      await AppData.initAsParent();
+      if (mounted) {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const AppGateScreen()));
+        return;
+      }
+    }
+    // 4. Rien → écran d'accueil
+    if (mounted) {
       Navigator.pushReplacement(context,
           MaterialPageRoute(builder: (_) => const WelcomeScreen()));
     }
@@ -459,12 +471,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   Future<void> _parentLogin() async {
     setState(() => _loading = true);
     try {
-      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
-      await AppData.initAsParent();
-      if (mounted) {
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const AppGateScreen()));
-      }
+      // Redirect évite le blocage iOS Safari sur les popups
+      await FirebaseAuth.instance.signInWithRedirect(GoogleAuthProvider());
+      // Le navigateur va rediriger — le code suivant ne s'exécute pas
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
