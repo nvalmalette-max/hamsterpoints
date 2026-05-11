@@ -412,34 +412,38 @@ class _StartupScreenState extends State<_StartupScreen> {
   }
 
   Future<void> _init() async {
-    // 1. Code dans l'URL (?code=XXXX) — partage par QR
-    final urlCode = AppData.getCodeFromUrl();
-    if (urlCode != null && urlCode.isNotEmpty) {
-      final ok = await AppData.initWithCode(urlCode);
+    try {
+      // 1. Code dans l'URL (?code=XXXX) — partage par QR
+      final urlCode = AppData.getCodeFromUrl();
+      if (urlCode != null && urlCode.isNotEmpty) {
+        final ok = await AppData.initWithCode(urlCode);
+        if (ok && mounted) {
+          Navigator.pushReplacement(context,
+              MaterialPageRoute(builder: (_) => const AppGateScreen()));
+          return;
+        }
+      }
+      // 2. Code en localStorage (visite précédente)
+      final ok = await AppData.initFromStorage();
       if (ok && mounted) {
         Navigator.pushReplacement(context,
             MaterialPageRoute(builder: (_) => const AppGateScreen()));
         return;
       }
-    }
-    // 2. Code en localStorage (visite précédente)
-    final ok = await AppData.initFromStorage();
-    if (ok && mounted) {
-      Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (_) => const AppGateScreen()));
-      return;
-    }
-    // 3. Retour depuis signInWithRedirect Google (main() a déjà appelé getRedirectResult)
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null && !user.isAnonymous) {
-      await AppData.initAsParent();
-      if (mounted) {
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const AppGateScreen()));
-        return;
+      // 3. Retour depuis signInWithRedirect Google
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && !user.isAnonymous) {
+        await AppData.initAsParent();
+        if (mounted) {
+          Navigator.pushReplacement(context,
+              MaterialPageRoute(builder: (_) => const AppGateScreen()));
+          return;
+        }
       }
+    } catch (_) {
+      // En cas d'erreur (ex: règles Firebase pas encore mises à jour), on continue
     }
-    // 4. Rien → écran d'accueil
+    // 4. Rien ou erreur → écran d'accueil
     if (mounted) {
       Navigator.pushReplacement(context,
           MaterialPageRoute(builder: (_) => const WelcomeScreen()));
