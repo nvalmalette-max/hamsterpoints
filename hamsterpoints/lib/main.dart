@@ -461,8 +461,9 @@ class WelcomeScreen extends StatefulWidget {
 class _WelcomeScreenState extends State<WelcomeScreen> {
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  bool _loading  = false;
-  bool _isSignUp = false;
+  bool _loading      = false;
+  bool _isSignUp     = false;
+  bool _showPassword = false;
   String? _error;
 
   @override
@@ -541,11 +542,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: _passwordCtrl,
-                obscureText: true,
+                obscureText: !_showPassword,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submit(),
-                decoration: const InputDecoration(
-                  labelText: 'Mot de passe', border: OutlineInputBorder(), isDense: true),
+                decoration: InputDecoration(
+                  labelText: 'Mot de passe',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setState(() => _showPassword = !_showPassword),
+                  ),
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
