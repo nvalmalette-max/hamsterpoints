@@ -12,7 +12,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCqoahu1PVKpTJ35hhDTVo7f56gyAoRkS8',
-    authDomain: 'nvalmalette-max.github.io',
+    authDomain: 'hamsterpoints.firebaseapp.com',
     databaseURL: 'https://hamsterpoints-default-rtdb.europe-west1.firebasedatabase.app',
     projectId: 'hamsterpoints',
     storageBucket: 'hamsterpoints.firebasestorage.app',

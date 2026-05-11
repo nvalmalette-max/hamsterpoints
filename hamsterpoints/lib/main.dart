@@ -373,7 +373,6 @@ Future<String?> pickImageAsBase64() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  try { await FirebaseAuth.instance.getRedirectResult(); } catch (_) {}
   runApp(const HamsterPointsApp());
 }
 
@@ -430,16 +429,6 @@ class _StartupScreenState extends State<_StartupScreen> {
             MaterialPageRoute(builder: (_) => const AppGateScreen()));
         return;
       }
-      // 3. Retour depuis signInWithRedirect Google
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !user.isAnonymous) {
-        await AppData.initAsParent();
-        if (mounted) {
-          Navigator.pushReplacement(context,
-              MaterialPageRoute(builder: (_) => const AppGateScreen()));
-          return;
-        }
-      }
     } catch (_) {
       // En cas d'erreur (ex: règles Firebase pas encore mises à jour), on continue
     }
@@ -470,20 +459,51 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  bool _loading = false;
+  final _emailCtrl    = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  bool _loading  = false;
+  bool _isSignUp = false;
+  String? _error;
 
-  Future<void> _parentLogin() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email    = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text.trim();
+    if (email.isEmpty || password.isEmpty) return;
+    setState(() { _loading = true; _error = null; });
     try {
-      // Redirect évite le blocage iOS Safari sur les popups
-      await FirebaseAuth.instance.signInWithRedirect(GoogleAuthProvider());
-      // Le navigateur va rediriger — le code suivant ne s'exécute pas
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur : $e')));
-        setState(() => _loading = false);
+      if (_isSignUp) {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+            email: email, password: password);
+      } else {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: email, password: password);
       }
+      await AppData.initAsParent();
+      if (mounted) {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => const AppGateScreen()));
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _loading = false;
+        _error = switch (e.code) {
+          'user-not-found'   => 'Aucun compte avec cet email.',
+          'wrong-password'   => 'Mot de passe incorrect.',
+          'email-already-in-use' => 'Cet email est déjà utilisé.',
+          'weak-password'    => 'Mot de passe trop court (6 caractères min).',
+          'invalid-email'    => 'Email invalide.',
+          _                  => e.message ?? 'Erreur inconnue.',
+        };
+      });
+    } catch (e) {
+      setState(() { _loading = false; _error = e.toString(); });
     }
   }
 
@@ -491,51 +511,83 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppPalette.parentBg,
-      body: Center(child: Padding(
+      body: Center(child: SingleChildScrollView(child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Text('🐹', style: TextStyle(fontSize: 80)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           const Text('HamsterPoints',
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text('Gérez les tâches et récompenses de votre famille !',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15, color: Colors.grey.shade600)),
-          const SizedBox(height: 48),
-          if (_loading)
-            const CircularProgressIndicator()
-          else ...[
-            SizedBox(width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _parentLogin,
-                icon: const Text('G', style: TextStyle(fontSize: 18,
-                    fontWeight: FontWeight.bold, color: Color(0xFF4285F4))),
-                label: const Text('Parent — Continuer avec Google',
-                    style: TextStyle(fontSize: 15)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white, foregroundColor: Colors.black87,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  side: BorderSide(color: Colors.grey.shade300), elevation: 2,
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+          const SizedBox(height: 36),
+
+          // ── Formulaire parent ──────────────────────────
+          Card(child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text(_isSignUp ? '👤 Créer un compte parent' : '🔑 Connexion parent',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Email', border: OutlineInputBorder(), isDense: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordCtrl,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+                decoration: const InputDecoration(
+                  labelText: 'Mot de passe', border: OutlineInputBorder(), isDense: true),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+              ],
+              const SizedBox(height: 16),
+              if (_loading)
+                const Center(child: CircularProgressIndicator())
+              else
+                ElevatedButton(
+                  onPressed: _submit,
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: Text(_isSignUp ? 'Créer mon compte' : 'Se connecter',
+                      style: const TextStyle(fontSize: 16)),
                 ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => setState(() { _isSignUp = !_isSignUp; _error = null; }),
+                child: Text(_isSignUp
+                    ? 'J\'ai déjà un compte → Se connecter'
+                    : 'Pas encore de compte → Créer un compte'),
+              ),
+            ]),
+          )),
+
+          const SizedBox(height: 20),
+
+          // ── Rejoindre (enfant) ─────────────────────────
+          SizedBox(width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const _JoinFamilyScreen())),
+              icon: const Icon(Icons.group_add_outlined),
+              label: const Text('Rejoindre une famille (enfant)',
+                  style: TextStyle(fontSize: 15)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               ),
             ),
-            const SizedBox(height: 16),
-            SizedBox(width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _JoinFamilyScreen())),
-                icon: const Icon(Icons.group_add_outlined),
-                label: const Text('Rejoindre une famille',
-                    style: TextStyle(fontSize: 15)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                ),
-              ),
-            ),
-          ],
+          ),
         ]),
-      )),
+      ))),
     );
   }
 }
