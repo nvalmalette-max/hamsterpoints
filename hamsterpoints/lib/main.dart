@@ -205,23 +205,27 @@ class AppData {
     return Uri.parse(href).queryParameters['code'];
   }
 
-  // Called when parent logs in with Google
+  // Called when parent logs in with email/password
   static Future<void> initAsParent() async {
-    final user = FirebaseAuth.instance.currentUser!;
-    final codeRef = FirebaseDatabase.instance.ref('parentFamilyCodes/${user.uid}');
-    final snap = await codeRef.get();
-    if (snap.exists && snap.value != null) {
-      familyCode = snap.value as String;
-    } else {
-      familyCode = generateCode();
-      // Migrate old data from users/${uid} if it exists
-      final oldSnap = await FirebaseDatabase.instance.ref('users/${user.uid}').get();
-      if (oldSnap.exists && oldSnap.value != null) {
-        await FirebaseDatabase.instance.ref('families/$familyCode').set(oldSnap.value);
-      }
-      await codeRef.set(familyCode);
+    // Réutilise le code déjà en localStorage si disponible
+    final stored = getStoredCode();
+    if (stored != null && stored.isNotEmpty) {
+      familyCode = stored;
+      await load();
+      return;
     }
+    // Nouveau compte → génère un code et migre les anciennes données si besoin
+    familyCode = generateCode();
     storeCode(familyCode);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final oldSnap = await FirebaseDatabase.instance.ref('users/${user.uid}').get();
+        if (oldSnap.exists && oldSnap.value != null) {
+          await _ref.set(oldSnap.value);
+        }
+      }
+    } catch (_) {}
     await load();
   }
 
