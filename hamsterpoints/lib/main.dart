@@ -249,12 +249,14 @@ class AppData {
   static Future<bool> initFromStorage() async {
     final code = getStoredCode();
     if (code == null || code.isEmpty) return false;
-    if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
-    }
+    try {
+      if (FirebaseAuth.instance.currentUser == null) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+    } catch (_) {}
     familyCode = code;
-    await load();
-    return true;
+    try { await load(); } catch (_) {}
+    return true; // Code trouvé → on reste connecté même si load échoue
   }
 
   static String uid() => DateTime.now().microsecondsSinceEpoch.toString();
@@ -813,6 +815,17 @@ class AppGateScreen extends StatefulWidget {
 }
 
 class _AppGateScreenState extends State<AppGateScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await AppData.load();
+    if (mounted) setState(() {});
+  }
+
   void _refresh() => setState(() {});
 
   Future<bool> _checkPin(BuildContext context) async {
@@ -1216,8 +1229,17 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         if (dayTasks.isEmpty)
           Text('Aucune tâche ce jour.',
               style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic))
-        else
-          ...dayTasks.map((t) => _taskTile(t)),
+        else ...[
+          // 1. En attente de validation (action requise en priorité)
+          ...(dayTasks.where((t) => t.pendingValidation && !t.done).toList()
+            ..sort((a, b) => a.childName.compareTo(b.childName))).map((t) => _taskTile(t)),
+          // 2. Assignées mais pas encore faites
+          ...(dayTasks.where((t) => !t.pendingValidation && !t.done).toList()
+            ..sort((a, b) => a.childName.compareTo(b.childName))).map((t) => _taskTile(t)),
+          // 3. Effectuées (en bas)
+          ...(dayTasks.where((t) => t.done).toList()
+            ..sort((a, b) => a.childName.compareTo(b.childName))).map((t) => _taskTile(t)),
+        ],
       ],
     );
   }
@@ -2603,12 +2625,55 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
   }
 
   Widget _taskList(List<ScheduledTask> tasks, ChildProfile child) {
-    // Only show scheduled/pending tasks (not instantly declared ones still pending)
-    if (tasks.isEmpty) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final cutoff = today.subtract(const Duration(days: 3));
+
+    final todo = (tasks.where((t) => !t.done && !t.pendingValidation).toList()
+      ..sort((a, b) => a.title.compareTo(b.title)));
+    final pending = (tasks.where((t) => t.pendingValidation && !t.done).toList()
+      ..sort((a, b) => a.title.compareTo(b.title)));
+    final recentDone = (tasks.where((t) => t.done && !t.date.isBefore(cutoff)).toList()
+      ..sort((a, b) => b.date.compareTo(a.date)));
+    final hasOlderDone = tasks.any((t) => t.done && t.date.isBefore(cutoff));
+
+    if (todo.isEmpty && pending.isEmpty && recentDone.isEmpty && !hasOlderDone) {
+      return const SizedBox.shrink();
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Tâches planifiées 📋', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 12),
-      ...tasks.take(20).map((t) => _kawaiiTaskTile(t, child)),
+      if (todo.isNotEmpty) ...[
+        const Text('Tâches planifiées 📋',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        ...todo.map((t) => _kawaiiTaskTile(t, child)),
+        const SizedBox(height: 8),
+      ],
+      if (pending.isNotEmpty) ...[
+        const Text('En attente de validation ⏳',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                color: Colors.orange)),
+        const SizedBox(height: 8),
+        ...pending.map((t) => _kawaiiTaskTile(t, child)),
+        const SizedBox(height: 8),
+      ],
+      if (recentDone.isNotEmpty) ...[
+        const Text('Récemment effectuées ✅',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                color: AppPalette.kawaiiMint)),
+        const SizedBox(height: 8),
+        ...recentDone.map((t) => _kawaiiTaskTile(t, child)),
+        const SizedBox(height: 8),
+      ],
+      if (hasOlderDone)
+        Center(
+          child: TextButton.icon(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => _ChildHistoryScreen(child: child))),
+            icon: const Text('📜', style: TextStyle(fontSize: 16)),
+            label: const Text('Voir l\'historique',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          ),
+        ),
     ]);
   }
 
@@ -2730,4 +2795,97 @@ class _ChildModeScreenState extends State<ChildModeScreen> with TickerProviderSt
     HamsterMood.happy    => 'Bravo $name ! Ton compagnon est heureux ! 🎉',
     HamsterMood.excited  => 'Waouh ! Ton compagnon est super content ! 🌟',
   };
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORIQUE ENFANT
+// ══════════════════════════════════════════════════════════════
+
+class _ChildHistoryScreen extends StatelessWidget {
+  final ChildProfile child;
+  const _ChildHistoryScreen({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = child.colorScheme;
+    final doneTasks = AppData.scheduledTasks
+        .where((t) => t.childId == child.id && t.done)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    // Group by date (yyyy-MM-dd)
+    final Map<String, List<ScheduledTask>> grouped = {};
+    for (final t in doneTasks) {
+      final key = '${t.date.year}-${t.date.month.toString().padLeft(2, '0')}-${t.date.day.toString().padLeft(2, '0')}';
+      grouped.putIfAbsent(key, () => []).add(t);
+    }
+    final sortedKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    String formatKey(String key) {
+      final d = DateTime.parse(key);
+      final weekdays = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+      final months = ['', 'jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'août', 'sep', 'oct', 'nov', 'déc'];
+      return '${weekdays[d.weekday]} ${d.day} ${months[d.month]}';
+    }
+
+    return Scaffold(
+      backgroundColor: scheme.bg,
+      appBar: AppBar(
+        backgroundColor: scheme.bg,
+        elevation: 0,
+        title: Text('Historique de ${child.name}',
+            style: TextStyle(color: scheme.accent, fontWeight: FontWeight.bold)),
+        iconTheme: IconThemeData(color: scheme.accent),
+      ),
+      body: doneTasks.isEmpty
+          ? const Center(child: Text('Aucune tâche effectuée pour l\'instant.'))
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              itemCount: sortedKeys.length,
+              itemBuilder: (ctx, i) {
+                final key = sortedKeys[i];
+                final tasks = grouped[key]!;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 6),
+                      child: Text(formatKey(key),
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: scheme.accent)),
+                    ),
+                    ...tasks.map((t) => Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppPalette.kawaiiMint, width: 1.5),
+                          ),
+                          child: Row(children: [
+                            Text(t.icon.isEmpty ? '📌' : t.icon,
+                                style: const TextStyle(fontSize: 22)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(t.title,
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      decoration: TextDecoration.lineThrough,
+                                      color: Colors.grey)),
+                            ),
+                            Text('${t.rewardSeeds} 🌱',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppPalette.kawaiiMint)),
+                          ]),
+                        )),
+                  ],
+                );
+              },
+            ),
+    );
+  }
 }
