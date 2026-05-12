@@ -231,12 +231,15 @@ class AppData {
 
   // Called when joining with a family code (child device)
   static Future<bool> initWithCode(String code) async {
-    final snap = await FirebaseDatabase.instance.ref('families/$code').get();
-    if (!snap.exists) return false;
+    final trimmed = code.trim().toUpperCase();
+    if (trimmed.isEmpty) return false;
+    // Auth d'abord — les règles Firebase exigent auth != null pour lire
     if (FirebaseAuth.instance.currentUser == null) {
       await FirebaseAuth.instance.signInAnonymously();
     }
-    familyCode = code.trim().toUpperCase();
+    final snap = await FirebaseDatabase.instance.ref('families/$trimmed').get();
+    if (!snap.exists) return false;
+    familyCode = trimmed;
     storeCode(familyCode);
     await load();
     return true;
@@ -623,14 +626,18 @@ class _JoinFamilyScreenState extends State<_JoinFamilyScreen> {
     final code = _ctrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
     setState(() { _loading = true; _error = null; });
-    final ok = await AppData.initWithCode(code);
-    if (!mounted) return;
-    if (ok) {
-      Navigator.pushAndRemoveUntil(context,
-          MaterialPageRoute(builder: (_) => const AppGateScreen()),
-          (_) => false);
-    } else {
-      setState(() { _loading = false; _error = 'Code introuvable. Vérifie avec tes parents.'; });
+    try {
+      final ok = await AppData.initWithCode(code);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.pushAndRemoveUntil(context,
+            MaterialPageRoute(builder: (_) => const AppGateScreen()),
+            (_) => false);
+      } else {
+        setState(() { _loading = false; _error = 'Code introuvable. Vérifie avec tes parents.'; });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Erreur : $e'; });
     }
   }
 
