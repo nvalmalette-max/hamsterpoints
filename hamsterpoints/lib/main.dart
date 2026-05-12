@@ -344,11 +344,17 @@ class AppData {
 
 Future<String?> pickImageAsBase64() {
   final completer = Completer<String?>();
-  final input = html.FileUploadInputElement()..accept = 'image/*';
+  final input = html.FileUploadInputElement()
+    ..accept = 'image/*'
+    ..style.display = 'none';
+
+  // Must be in the DOM for iOS Safari to fire onChange
+  html.document.body!.append(input);
+  void cleanup() { try { input.remove(); } catch (_) {} }
 
   input.onChange.listen((_) {
     final file = input.files?.first;
-    if (file == null) { if (!completer.isCompleted) completer.complete(null); return; }
+    if (file == null) { cleanup(); if (!completer.isCompleted) completer.complete(null); return; }
     final reader = html.FileReader();
     reader.onLoad.listen((_) {
       final dataUrl = reader.result as String;
@@ -356,7 +362,7 @@ Future<String?> pickImageAsBase64() {
       img.onLoad.listen((_) {
         const maxDim = 500;
         int w = img.naturalWidth, h = img.naturalHeight;
-        if (w == 0 || h == 0) { if (!completer.isCompleted) completer.complete(dataUrl); return; }
+        if (w == 0 || h == 0) { cleanup(); if (!completer.isCompleted) completer.complete(dataUrl); return; }
         if (w > maxDim || h > maxDim) {
           if (w >= h) { h = (h * maxDim ~/ w); w = maxDim; }
           else        { w = (w * maxDim ~/ h); h = maxDim; }
@@ -364,6 +370,7 @@ Future<String?> pickImageAsBase64() {
         final canvas = html.CanvasElement();
         canvas.width = w; canvas.height = h;
         canvas.context2D.drawImageScaled(img, 0, 0, w, h);
+        cleanup();
         if (!completer.isCompleted) completer.complete(canvas.toDataUrl('image/jpeg', 0.75));
       });
       img.src = dataUrl;
@@ -1005,6 +1012,7 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
   String? _filterChildId;
   RecurrenceType _recurrence = RecurrenceType.none;
   DateTime? _endDate;
+  final _expansionCtrl = ExpansibleController();
 
   List<ScheduledTask> _tasksForDay(DateTime day, {String? childId}) =>
       AppData.scheduledTasks.where((t) {
@@ -1045,6 +1053,7 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
     await AppData.save();
     setState(() {});
     widget.onRefresh();
+    _expansionCtrl.collapse();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(dates.length > 1 ? '${dates.length} tâches créées ✅' : 'Tâche attribuée ✅')));
@@ -1158,6 +1167,7 @@ class _ParentCalendarScreenState extends State<ParentCalendarScreen> {
         )),
         const SizedBox(height: 10),
         ExpansionTile(
+          controller: _expansionCtrl,
           title: const Text('➕ Attribuer une tâche',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           children: [
