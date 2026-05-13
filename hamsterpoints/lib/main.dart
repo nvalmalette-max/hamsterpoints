@@ -207,18 +207,34 @@ class AppData {
 
   // Called when parent logs in with email/password
   static Future<void> initAsParent() async {
-    // Réutilise le code déjà en localStorage si disponible
+    // 1. localStorage (le plus rapide)
     final stored = getStoredCode();
     if (stored != null && stored.isNotEmpty) {
       familyCode = stored;
+      await _saveCodeToAccount(familyCode);
       await load();
       return;
     }
-    // Nouveau compte → génère un code et migre les anciennes données si besoin
+    // 2. Firebase lié au compte email (survit à une réinstallation)
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final snap = await FirebaseDatabase.instance
+            .ref('userFamilyCodes/${user.uid}')
+            .get();
+        if (snap.exists && snap.value != null) {
+          familyCode = snap.value as String;
+          storeCode(familyCode);
+          await load();
+          return;
+        }
+      } catch (_) {}
+    }
+    // 3. Vraiment nouveau compte → génère un code
     familyCode = generateCode();
     storeCode(familyCode);
+    await _saveCodeToAccount(familyCode);
     try {
-      final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final oldSnap = await FirebaseDatabase.instance.ref('users/${user.uid}').get();
         if (oldSnap.exists && oldSnap.value != null) {
@@ -227,6 +243,30 @@ class AppData {
       }
     } catch (_) {}
     await load();
+  }
+
+  // Lie le code famille au compte Firebase de l'utilisateur
+  static Future<void> _saveCodeToAccount(String code) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) return;
+    try {
+      await FirebaseDatabase.instance
+          .ref('userFamilyCodes/${user.uid}')
+          .set(code);
+    } catch (_) {}
+  }
+
+  // Récupère une famille existante (ex : après réinstall sans localStorage)
+  static Future<bool> claimExistingCode(String code) async {
+    final trimmed = code.trim().toUpperCase();
+    if (trimmed.isEmpty) return false;
+    final snap = await FirebaseDatabase.instance.ref('families/$trimmed').get();
+    if (!snap.exists) return false;
+    familyCode = trimmed;
+    storeCode(familyCode);
+    await _saveCodeToAccount(familyCode);
+    await load();
+    return true;
   }
 
   // Called when joining with a family code (child device)
@@ -2122,6 +2162,16 @@ class _AccountSettingsScreenState extends State<_AccountSettingsScreen> {
         )),
         const SizedBox(height: 24),
 
+        // ── Récupération ──────────────────────────────────
+        Card(child: ListTile(
+          leading: const Icon(Icons.restore, color: AppPalette.green),
+          title: const Text('Récupérer mon compte famille'),
+          subtitle: const Text('Si vous avez perdu l\'accès, entrez votre ancien code famille'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _recoverCode,
+        )),
+        const SizedBox(height: 24),
+
         if (user != null)
           ElevatedButton.icon(
             onPressed: _signOut,
@@ -2131,6 +2181,62 @@ class _AccountSettingsScreenState extends State<_AccountSettingsScreen> {
                 backgroundColor: Colors.red, foregroundColor: Colors.white),
           ),
       ]),
+    );
+  }
+
+  Future<void> _recoverCode() async {
+    final ctrl = TextEditingController();
+    String? error;
+    bool loading = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => AlertDialog(
+        title: const Text('Récupérer mon code famille'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Entre le code famille de ton ancien appareil :'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'Code famille (ex: HY53GQG3)',
+              errorText: error,
+              isDense: true,
+            ),
+          ),
+          if (loading) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: loading ? null : () => Navigator.pop(ctx),
+              child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: loading ? null : () async {
+              setS(() { loading = true; error = null; });
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                final ok = await AppData.claimExistingCode(ctrl.text);
+                if (!ctx.mounted) return;
+                if (ok) {
+                  Navigator.pop(ctx);
+                  setState(() {});
+                  widget.onRefresh();
+                  messenger.showSnackBar(
+                      const SnackBar(content: Text('Compte récupéré ! ✅')));
+                } else {
+                  setS(() { loading = false; error = 'Code introuvable. Vérifie et réessaie.'; });
+                }
+              } catch (e) {
+                if (ctx.mounted) setS(() { loading = false; error = 'Erreur : $e'; });
+              }
+            },
+            child: const Text('Récupérer'),
+          ),
+        ],
+      )),
     );
   }
 }
